@@ -1,0 +1,501 @@
+<!doctype html>
+
+<html class="light" lang="ru">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Geist:wght@100;300;400;500;600;700;800;900&display=swap");
+
+        body {
+            font-family: "Geist", sans-serif;
+            background-color: #fbf9f8;
+            overflow: hidden;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings:
+                "FILL" 0,
+                "wght" 300,
+                "GRAD" 0,
+                "opsz" 24;
+            user-select: none;
+        }
+
+        /* Neumorphic Raised */
+        .neumorph-raised {
+            background: #fbf9f8;
+            box-shadow:
+                -6px -6px 16px rgba(255, 255, 255, 0.9),
+                6px 6px 16px rgba(186, 182, 178, 0.25);
+        }
+
+        /* Neumorphic Sunken */
+        .neumorph-sunken {
+            background: #fbf9f8;
+            box-shadow:
+                inset -4px -4px 10px rgba(255, 255, 255, 0.8),
+                inset 4px 4px 10px rgba(186, 182, 178, 0.2);
+        }
+
+        /* Play Button specific depth */
+        .play-button-outer {
+            box-shadow:
+                -8px -8px 20px rgba(255, 255, 255, 1),
+                8px 8px 20px rgba(186, 182, 178, 0.3);
+        }
+
+        /* Waveform Animation */
+        .wave-bar {
+            transition: height 0.2s ease-in-out;
+        }
+
+        /* Loop selection markers */
+        .loop-marker {
+            filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.05));
+        }
+
+        /* Glassmorphism for toggle */
+        .glass-toggle {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "inverse-surface": "#303030",
+                        "surface-container": "#efeded",
+                        "surface-tint": "#7a9999",
+                        "tertiary-fixed-dim": "#c7c7c3",
+                        "primary": "#7a9999",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed-variant": "#3d4a3c",
+                        "surface-dim": "#dbd9d9",
+                        "on-error-container": "#93000a",
+                        "on-surface-variant": "#444842",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed": "#e4e2dd",
+                        "primary-container": "#8c9b8a",
+                        "on-background": "#1b1c1c",
+                        "on-surface": "#1b1c1c",
+                        "outline": "#747872",
+                        "surface-bright": "#fbf9f8",
+                        "on-tertiary-container": "#2e302d",
+                        "secondary": "#5f5e5b",
+                        "on-tertiary-fixed-variant": "#464744",
+                        "tertiary-container": "#979794",
+                        "tertiary-fixed": "#e3e2df",
+                        "inverse-on-surface": "#f2f0f0",
+                        "surface-container-high": "#eae8e7",
+                        "secondary-container": "#e1dfda",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#474743",
+                        "tertiary": "#5e5f5c",
+                        "secondary-fixed-dim": "#c8c6c2",
+                        "on-secondary-container": "#63635f",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#c4c8c0",
+                        "surface-container-lowest": "#ffffff",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#bbcbb8",
+                        "surface-variant": "#e4e2e2",
+                        "error": "#ba1a1a",
+                        "background": "#fbf9f8",
+                        "on-tertiary-fixed": "#1b1c1a",
+                        "inverse-primary": "#bbcbb8",
+                        "on-primary-fixed": "#121e13",
+                        "surface-container-highest": "#e4e2e2",
+                        "on-secondary-fixed": "#1b1c19",
+                        "surface": "#fbf9f8",
+                        "surface-container-low": "#f5f3f3",
+                        "on-primary-container": "#253326",
+                        "primary-fixed": "#d7e7d4",
+                    },
+                    spacing: {
+                        "container-padding": "40px",
+                        "stack-md": "24px",
+                        unit: "8px",
+                        "stack-lg": "48px",
+                        gutter: "24px",
+                        "stack-sm": "12px",
+                    },
+                    fontFamily: {
+                        "headline-xl": ["Geist"],
+                        "headline-lg": ["Geist"],
+                        "body-lg": ["Geist"],
+                        "body-md": ["Geist"],
+                        "label-sm": ["Geist"],
+                        "label-md": ["Geist"],
+                    },
+                },
+            },
+        };
+    </script>
+</head>
+
+<body class="bg-surface text-on-surface">
+    <div class="flex h-screen w-full overflow-hidden relative">
+        <!-- Floating Theme Icon Toggle (Top-Right) -->
+        <div class="absolute top-8 right-8 z-50">
+            <button aria-label="Toggle Theme"
+                class="w-12 h-12 rounded-full glass-toggle flex items-center justify-center text-secondary hover:text-primary hover:scale-110 transition-all duration-300"
+                id="theme-toggle">
+                <span class="material-symbols-outlined text-[24px]">dark_mode</span>
+            </button>
+        </div>
+
+        <!-- Sidebar Navigation (SideNavBar) -->
+        <aside
+            class="h-screen w-64 flex-shrink-0 flex flex-col py-stack-lg px-gutter bg-surface shadow-[4px_4px_12px_rgba(0,0,0,0.05)] z-20 bg-surface-container-high">
+
+            <!-- Header Logo -->
+            <div class="mb-stack-md">
+                <h1 class="font-headline-lg text-headline-lg text-primary tracking-tight font-semibold">
+                    Wave Player
+                </h1>
+                <p class="font-label-sm text-label-sm text-secondary tracking-widest uppercase">
+                    Premium Audio
+                </p>
+                <div class="mt-4 border-t border-outline-variant pt-4"></div>
+            </div>
+
+            <!-- Menu Items -->
+            <nav class="flex flex-col gap-unit">
+                <!-- Active Item: Library -->
+                <button
+                    class="flex items-center gap-4 py-3 px-4 rounded-xl text-primary font-bold border-r-4 border-primary bg-surface-container-low transition-all">
+                    <span class="material-symbols-outlined" data-icon="library_music">library_music</span>
+                    <span class="font-body-md text-body-md">Library</span>
+                </button>
+                <button
+                    class="flex items-center gap-4 py-3 px-4 rounded-xl text-secondary font-medium hover:bg-surface-container-low transition-colors active:scale-95 duration-150">
+                    <span class="material-symbols-outlined" data-icon="queue_music">queue_music</span>
+                    <span class="font-body-md text-body-md">Playlists</span>
+                </button>
+                <button
+                    class="flex items-center gap-4 py-3 px-4 rounded-xl text-secondary font-medium hover:bg-surface-container-low transition-colors active:scale-95 duration-150">
+                    <span class="material-symbols-outlined" data-icon="favorite">favorite</span>
+                    <span class="font-body-md text-body-md">Favorites</span>
+                </button>
+                <button
+                    class="flex items-center gap-4 py-3 px-4 rounded-xl text-secondary font-medium hover:bg-surface-container-low transition-colors active:scale-95 duration-150">
+                    <span class="material-symbols-outlined" data-icon="settings">settings</span>
+                    <span class="font-body-md text-body-md">Settings</span>
+                </button>
+            </nav>
+
+            <!-- Bottom User Account -->
+            <div class="mt-auto pt-stack-lg flex items-center gap-3 px-4">
+                <div class="w-10 h-10 rounded-full neumorph-raised overflow-hidden border-2 border-white">
+                    <img alt="User profile" class="w-full h-full object-cover"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCfVoFN4WjR8bGBFk1HCus332okApawPvQZI3_oUlYWcmdyHBSMbKD2wQBAg-hQvj-Qf5HyGGXM-pKnNIMYFI3dyt2Pi4curEKeB2_FOyqPcWQEUGArpZ5Bj3HVEF4HiDVOArCRqx9kL_KhLgwAf8Qkow_WW6hS_V8UkYwv0oyLiVPyJMn3rQIp2yVFF3_YqkvElhJW1xLJWq6V6rK1FTw377ehBa1Myl39hOSsqr0fJSMUELB5_6AlHQ" />
+                </div>
+                <div>
+                    <p class="font-label-md text-label-md font-bold">
+                        User Profile
+                    </p>
+                    <p class="font-label-sm text-label-sm text-secondary">
+                        Premium Plan
+                    </p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main
+            class="flex-grow flex flex-col items-center justify-center relative bg-surface p-container-padding overflow-y-auto">
+
+            <!-- Center Cluster: Album & Info -->
+            <div class="w-full max-w-[600px] flex flex-col items-center gap-8">
+
+                <!-- Album Cover -->
+                <div class="relative group">
+                    <div
+                        class="w-[260px] h-[260px] rounded-[32px] neumorph-raised p-4 flex items-center justify-center transition-transform duration-500 hover:scale-[1.02]">
+                        <div class="w-full h-full rounded-[24px] overflow-hidden shadow-sm">
+                            <div
+                                class="absolute top-1/2 left-[50%] -translate-y-1/2 -translate-x-1/2 cursor-pointer loop-marker hover:scale-105 transition-transform">
+                                <span class="material-symbols-outlined text-primary/20 text-[140px]" style="
+                                            font-variation-settings: &quot;FILL&quot;
+                                                0;
+                                        ">music_note</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- <div
+                        class="w-[260px] h-[260px] rounded-[32px] neumorph-raised p-4 flex items-center justify-center transition-transform duration-500 hover:scale-[1.02]">
+                        <div class="w-full h-full rounded-[24px] overflow-hidden shadow-sm">
+                            <img alt="Album Art" class="w-full h-full object-cover"
+                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuCM4nRhmTo5WeUkvC6OVwBojzQtShYMXagHMI38pzcWVeJ2NMQQ7ONdbzxQo_UxaU4mwNnYaMoreLWbJutJPKGhmyTX0VagyU4TrT1JIZ2BNq0gOvcIbbNbup-GzRY9X9GQLkYXsYs8EV4R10-qtPa42Jj1fcNbkHGXx7dXBkHr8WhcMNz7PZPkk3Xs2WNs8sCHNLBcJFbvRj14cN3HLNbIhk3qDGTPaoOrjf7yfli8GeihYlCBI0_9TQ" />
+                        </div>
+                    </div> -->
+                </div>
+
+                <!-- Track Info -->
+                <div class="text-center">
+                    <h2 class="font-headline-md text-headline-md text-on-surface mb-1">
+                        Сквозь туман
+                    </h2>
+                    <p class="font-body-md text-body-md text-secondary opacity-80">
+                        Эмбиент Проект
+                    </p>
+                </div>
+
+                <!-- Track BPM & Scale -->
+                <div class="flex gap-4">
+                    <div class="flex flex-col">
+                        <span class="text-label-sm uppercase text-secondary opacity-60">BPM</span>
+                        <span class="font-bold text-primary">124</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-label-sm uppercase text-secondary opacity-60">Key</span>
+                        <span class="font-bold text-primary">Am</span>
+                    </div>
+                </div>
+
+                <!-- High-Fidelity Waveform Visualizer -->
+                <div
+                    class="w-full h-24 relative flex items-center px-4 neumorph-sunken rounded-2xl hover:shadow overflow-hidden">
+                    <!-- The Waveform Bars -->
+                    <div class="w-full h-12 flex items-center justify-between gap-[2px]" id="waveform-container">
+                        <!-- JS will inject bars here for interactivity -->
+                    </div>
+
+                    <!-- Loop Selection Overlay -->
+                    <div
+                        class="absolute inset-y-0 left-[30%] right-[30%] bg-primary/5 border-2 border-dashed border-primary/40 cursor-grab">
+                        <div title="loop"
+                            class="absolute top-0 right-1 hover:bg-secondary-container cursor-pointer hover:scale-105 material-symbols-outlined text-primary text-[22px]">
+                            <!-- <span class="font-label-sm text-label-sm text-primary font-bold">LOOP</span> -->
+                            <span class="font-variation-settings: 'FILL' 0;">laps</span>
+                        </div>
+                    </div>
+
+                    <!-- Loop Markers -->
+                    <div
+                        class="absolute top-1/2 left-[30%] -translate-y-1/2 -translate-x-1/2 cursor-w-resize loop-marker hover:scale-125 transition-transform">
+                        <span class="material-symbols-outlined text-primary/90 text-[48px]" style="
+                                    font-variation-settings: &quot;FILL&quot; 1;
+                                ">arrow_right</span>
+                    </div>
+                    <div
+                        class="absolute top-1/2 right-[30%] -translate-y-1/2 translate-x-1/2 cursor-col-resize loop-marker hover:scale-125 transition-transform">
+                        <span class="material-symbols-outlined text-primary/90 text-[28px]" style="
+                                    font-variation-settings: &quot;FILL&quot; 0;
+                                ">drag_indicator</span>
+                    </div>
+
+                    <!-- Timeline indicator -->
+                    <div
+                        class="absolute top-0 bottom-0 left-[45%] w-[2px] bg-primary z-10 shadow-[0_0_8px_rgba(84,98,83,0.5)] cursor-grab hover:scale-105">
+                        <div class="absolute -top-0 -left-[3px] w-2 h-2 rounded-full bg-primary"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Compact Floating Player Navigation -->
+            <section class="mt-8 px-6 py-4 neumorph-raised rounded-full flex items-center gap-6 hover:shadow">
+                <div class="flex items-center gap-4">
+                    <button title="repeat track"
+                        class="text-secondary hover:bg-surface-container hover:text-primary transition-colors flex items-center">
+                        <span class="material-symbols-outlined text-[20px]">repeat</span>
+                    </button>
+                    <button title="shuffle tracks"
+                        class="text-secondary hover:bg-surface-container hover:text-primary transition-colors flex items-center">
+                        <span class="material-symbols-outlined text-[20px]">shuffle</span>
+                    </button>
+                    <button title="add to favorites"
+                        class="text-secondary hover:bg-surface-container hover:text-primary transition-colors flex items-center">
+                        <span class="material-symbols-outlined text-[20px]">favorite</span>
+                    </button>
+                </div>
+                <div class="h-6 w-[1px] bg-outline-variant opacity-50"></div>
+                <div class="flex items-center gap-4">
+                    <button title="previous track"
+                        class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container hover:text-primary transition-all active:scale-90">
+                        <span class="material-symbols-outlined text-[24px]"
+                            data-icon="skip_previous">skip_previous</span>
+                    </button>
+                    <button title="play track"
+                        class="w-16 h-16 rounded-full flex items-center justify-center bg-primary text-on-primary shadow-lg transition-all hover:scale-105 active:scale-95 group">
+                        <span class="material-symbols-outlined text-[36px]" data-icon="play_arrow" style="
+                                    font-variation-settings: &quot;FILL&quot; 1;
+                                ">play_arrow</span>
+                    </button>
+                    <button title="next track"
+                        class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container hover:text-primary transition-all active:scale-90">
+                        <span class="material-symbols-outlined text-[24px]" data-icon="skip_next">skip_next</span>
+                    </button>
+                </div>
+                <div class="h-6 w-[1px] bg-outline-variant opacity-50"></div>
+                <div title="change track speed" class="flex items-center gap-3">
+                    <div class="relative group/speed">
+                        <button
+                            class="px-2 py-1 rounded-md text-label-md font-bold text-secondary hover:bg-surface-container hover:text-primary transition-colors">
+                            1.0x
+                        </button>
+                        <div
+                            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 opacity-0 group-hover/speed:opacity-100 pointer-events-none group-hover/speed:pointer-events-auto transition-all duration-300">
+                            <div class="neumorph-raised rounded-xl p-2 flex flex-col gap-1 min-w-[60px]">
+                                <button
+                                    class="px-2 py-1 rounded-md text-label-sm hover:bg-primary/10 hover:text-primary transition-colors">0.5x</button>
+                                <button
+                                    class="px-2 py-1 rounded-md text-label-sm hover:bg-primary/10 hover:text-primary transition-colors">0.75x</button>
+                                <button
+                                    class="px-2 py-1 rounded-md text-label-sm bg-primary/10 text-primary font-bold">1.0x</button>
+                                <button
+                                    class="px-2 py-1 rounded-md text-label-sm hover:bg-primary/10 hover:text-primary transition-colors">1.25x</button>
+                                <button
+                                    class="px-2 py-1 rounded-md text-label-sm hover:bg-primary/10 hover:text-primary transition-colors">1.5x</button>
+                                <button
+                                    class="px-2 py-1 rounded-md text-label-sm hover:bg-primary/10 hover:text-primary transition-colors">2.0x</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="relative group/volume">
+                        <button title="change track volume"
+                            class="text-secondary hover:bg-surface-container hover:text-primary transition-colors flex items-center">
+                            <span class="material-symbols-outlined text-[20px] text-secondary">volume_up</span>
+                            <div class="relative w-24 h-6 flex items-center">
+                                <div
+                                    class="w-full h-1.5 bg-surface-container-highest rounded-full neumorph-sunken relative">
+                                    <div class="absolute left-0 top-0 h-full w-3/4 bg-primary rounded-full"></div>
+                                    <div
+                                        class="absolute left-[75%] top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-lg shadow-primary/20 border-2 border-white cursor-pointer hover:scale-110 transition-transform">
+                                    </div>
+                                </div>
+                            </div>
+                            <span class="text-label-sm font-bold text-secondary min-w-[32px]">75%</span>
+                            <!--<span class="material-symbols-outlined text-[20px]">volume_up</span>-->
+                        </button>
+
+                        <!--Clipping indicator -->
+                        <button title="audio clipping alert!" class="absolute -top-3 left-2 text-secondary"
+                            style="color: crimson">
+                            <span class="material-symbols-outlined text-[20px]">exclamation</span>
+                        </button>
+                        <!-- <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 opacity-0 group-hover/volume:opacity-100 pointer-events-none group-hover/volume:pointer-events-auto transition-all duration-300">
+                            <div class="neumorph-raised rounded-full p-3 h-32 flex flex-col items-center">
+                                <div class="w-1.5 h-full bg-surface-container-highest rounded-full relative overflow-hidden">
+                                    <div class="absolute bottom-0 left-0 right-0 bg-primary h-2/3 rounded-full"></div>
+                                </div>
+                            </div>
+                        </div> -->
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer Shell -->
+        <footer
+            class="fixed bottom-0 w-full h-16 z-10 flex items-center justify-between px-container-padding bg-transparent pointer-events-none">
+
+            <!-- Left hidden copyright text -->
+            <div class="flex items-center gap-stack-md pointer-events-auto">
+                <!-- <span class="font-label-sm text-label-sm font-bold text-secondary opacity-60">Quiet Tech Audio ©
+                    2024</span> -->
+            </div>
+
+            <!-- Right social links -->
+            <div class="flex gap-stack-md pointer-events-auto">
+                <a class="font-label-sm text-label-sm text-secondary opacity-60 hover:text-primary transition-all"
+                    href="#">Github</a>
+                <a class="font-label-sm text-label-sm text-secondary opacity-60 hover:text-primary transition-all"
+                    href="#">Bug Report</a>
+                <a class="font-label-sm text-label-sm text-secondary opacity-60 hover:text-primary transition-all"
+                    href="#">Support</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Js waveform visual and animation + theme toggle -->
+    <script>
+        // Generate Interactive Waveform
+        const container = document.getElementById("waveform-container");
+        const barCount = 96;
+
+        for (let i = 0; i < barCount; i++) {
+            const bar = document.createElement("div");
+            bar.className =
+                "wave-bar w-full bg-outline-variant rounded-full";
+
+            // Initial random heights for aesthetic
+            const baseHeight = 10 + Math.random() * 40;
+            bar.style.height = `${baseHeight}%`;
+
+            // Loop highlighting logic
+            const pos = i / barCount;
+            if (pos >= 0.3 && pos <= 0.7) {
+                bar.classList.remove("bg-outline-variant");
+                bar.classList.add("bg-primary");
+            }
+
+            container.appendChild(bar);
+        }
+
+        // Simple Wave Animation
+        function animateWaveform() {
+            const bars = document.querySelectorAll(".wave-bar");
+            bars.forEach((bar) => {
+                const randomGrowth = Math.random() * 20;
+                const baseHeight = parseFloat(bar.style.height);
+                const newHeight = Math.max(
+                    10,
+                    Math.min(
+                        90,
+                        baseHeight +
+                        (Math.random() > 0.5
+                            ? randomGrowth
+                            : -randomGrowth),
+                    ),
+                );
+                bar.style.height = `${newHeight}%`;
+            });
+        }
+
+        setInterval(animateWaveform, 250);
+
+        // Micro-interactions for buttons
+        document.querySelectorAll("button").forEach((btn) => {
+            btn.addEventListener("mousedown", () => {
+                btn.style.transform = "scale(0.95)";
+            });
+            btn.addEventListener("mouseup", () => {
+                btn.style.transform = "scale(1)";
+            });
+        });
+
+        // Simple Theme Toggle functionality (visual only for this prototype)
+        const themeToggle = document.getElementById("theme-toggle");
+        themeToggle.addEventListener("click", () => {
+            const html = document.documentElement;
+            const icon = themeToggle.querySelector(
+                ".material-symbols-outlined",
+            );
+            if (html.classList.contains("light")) {
+                html.classList.remove("light");
+                html.classList.add("dark");
+                icon.textContent = "light_mode";
+            } else {
+                html.classList.remove("dark");
+                html.classList.add("light");
+                icon.textContent = "dark_mode";
+            }
+        });
+    </script>
+</body>
+
+</html>

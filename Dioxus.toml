@@ -1,0 +1,41 @@
+[application]
+
+[web.app]
+
+# HTML title tag content
+title = "wave_player"
+
+# include `assets` in web platform
+[web.resource]
+
+# Additional CSS style files
+style = []
+
+# Additional JavaScript files
+script = []
+
+[web.resource.dev]
+
+# Javascript code file
+# serve: [dev-server] only
+script = []
+
+[web.watcher]
+reload_html = true
+# Reload the desktop window on file changes
+watch_path = ["src", "input.css"]
+
+[web.asset]
+preprocess = "tailwindcss -i ./input.css -o ./assets/tailwind.css --minify"
+
+[bundle]
+identifier = "dev.waveplayer"
+publisher = "iqhater"
+icon = ["assets/favicon.png"]
+
+
+# Запускается один раз перед сборкой проекта (dx build)
+# build = "npx tailwindcss -i ./src/theme.css -o ./assets/tailwind.css --minify"
+
+# Запускается параллельно с сервером разработки (dx serve) и следит за изменениями
+# serve = "npx tailwindcss -i ./src/theme.css -o ./assets/tailwind.css --watch"

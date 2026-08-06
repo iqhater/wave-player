@@ -1,0 +1,30 @@
+/* Markdown terms styling */
+.markdown-content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.markdown-content p {
+  margin-bottom: 1rem;
+  line-height: 1.625;
+}
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  margin-bottom: 0.75rem;
+  margin-top: 1.25rem;
+  font-weight: 700;
+}
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.markdown-content li {
+  margin-bottom: 0.25rem;
+}
+.markdown-content strong {
+  font-weight: 700;
+}
+.markdown-content::-webkit-scrollbar {
+  display: none;
+}

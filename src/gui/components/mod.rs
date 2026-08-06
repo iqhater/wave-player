@@ -1,0 +1,15 @@
+pub mod album_art;
+pub mod bpm_key;
+pub mod errors_toast;
+pub mod filters_spatial;
+pub mod footer;
+pub mod loop_player;
+pub mod open_file;
+pub mod player_controls;
+pub mod sidebar;
+pub mod theme_toggle;
+pub mod track_info;
+pub mod waveform;
+// pub mod waveform_bins;
+pub mod waveform_bins_canvas;
+pub use player_controls::ControlIconButton;

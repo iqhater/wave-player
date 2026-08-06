@@ -1,0 +1,85 @@
+version: "3"
+
+# Global variables
+vars:
+  APP_NAME: wave_player
+
+# Global environment variables
+env:
+  # Rust parameters
+  CARGO_BUILD: cargo build
+  CARGO_CLEAN: cargo clean
+  CARGO_TEST: cargo test
+  CARGO_FETCH: cargo fetch
+  CARGO_FIX: cargo fix # Automatically fix lint warnings reported by rustc
+  PLATFORM: windows.exe
+
+  MODULE_NAME: "{{ .APP_NAME }}"
+
+  # Binary name
+  BINARY_NAME: "{{ .APP_NAME }}"
+
+  # App entrypoint path
+  APP_ENTRYPOINT: ./src/main.rs
+
+tasks:
+  # Install dependencies
+  install:
+    silent: true
+    cmds:
+      - echo "📦 Install Dependencies"
+      # TODO:
+      - $CARGO_FETCH && $CARGO_
+
+  # Build app
+  build:
+    silent: true
+    cmds:
+      - pnpm build:css && dx build --release
+      # - $CARGO_BUILD -o ${BINARY_NAME}_${PLATFORM} $APP_ENTRYPOINT
+      - echo "📦 Build Done"
+
+  # Build app for all platforms
+  build-all:
+    cmds:
+      - for: ["darwin", "linux", "windows.exe"]
+        # TODO:
+        cmd: $CARGO_BUILD -o ${BINARY_NAME}_{{ .ITEM }} $APP_ENTRYPOINT
+      - echo "📦 Builds Done"
+
+  watch-css:
+      silent: true
+      cmds:
+        - pnpm watch:css
+
+  serve-app:
+      silent: true
+      cmds:
+        - dx serve --desktop
+
+  # dev and run
+  dev:
+    silent: true
+    deps: [watch-css, serve-app]
+    cmds:
+      - echo "🚀 Running App in development mode"
+
+  # Clean app binaries
+  clean:
+    cmds:
+      - echo "🧹 Clean App Binaries"
+      - for: ["darwin", "linux", "windows"]
+        cmd: if [ $(go env GOOS) == {{ .ITEM }} ]; then rm ${BINARY_NAME}_${PLATFORM}; fi
+
+  # Run unit tests
+  test:
+    silent: true
+    cmds:
+      - echo "🧪 Running Unit Tests"
+      - $CARGO_TEST
+
+  # Lint
+  lint:
+    cmds:
+      - $CARGO_FIX
+      - echo "🔦 Code Linted"
