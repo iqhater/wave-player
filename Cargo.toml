@@ -1,6 +1,6 @@
 [package]
 name = "wave_player"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 authors = ["iqhater <iqhater@yandex.ru>"]
 edition = "2024"
 license = "MIT"

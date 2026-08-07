@@ -180,7 +180,7 @@ pub fn Waveform() -> Element {
                 onmounted: move |el| {
                     spawn(async move {
                         if let Ok(rect) = el.get_client_rect().await {
-                            container_rect.set(Some((0.0, rect.size.width as f32)));
+                            container_rect.set(Some((rect.origin.x as f32, rect.size.width as f32)));
                         }
                     });
                 },
@@ -189,28 +189,33 @@ pub fn Waveform() -> Element {
                 onclick: {
                     move |e| {
 
-                        // dioxus::document::eval(r#" if (e.target.id === "waveform-bins-container") return; "#);
-                        // let eval = dioxus::document::eval(r#" let value = await dioxus.recv(); console.log("Target Elem:", value); "#);
-
-                        // eval.send(e.element_coordinates().x).unwrap();
-
                         if dragging().is_some() {
                             // dragging.set(None);
                             return;
                         }
 
-                        if let Some((_, width)) = container_rect() {
-
                         let element_x = e.element_coordinates().x as f32;
 
-                        let waveform_width = (width as f32 / 2.0) - 44.0; // TODO:
-                        let pct = (element_x / waveform_width).clamp(0.0, 1.0);
+                        // Ширину берём прямо из canvas (в тех же CSS-пикселях, что и offsetX)
+                        let mut size_eval = dioxus::document::eval(
+                            r#"
+                            let c = document.getElementById("waveform-canvas");
+                            dioxus.send(c ? c.clientWidth : 0);
+                            "#
+                        );
 
-                        let _ = ctx.command_tx.read().send(PlayerCommand::Seek(
-                            Duration::from_secs_f32(duration_secs() * pct),
-                        ));
-                        // position_secs.set(duration_secs() * pct);
-                        }
+                        spawn(async move {
+                            if let Ok(serde_json::Value::Number(w)) = size_eval.recv().await {
+                                if let Some(w) = w.as_f64() {
+                                    if w > 0.0 {
+                                        let pct = (element_x / w as f32).clamp(0.0, 1.0);
+                                        let _ = ctx.command_tx.read().send(PlayerCommand::Seek(
+                                            Duration::from_secs_f32(duration_secs() * pct),
+                                        ));
+                                    }
+                                }
+                            }
+                        });
                     }
                 },
 
