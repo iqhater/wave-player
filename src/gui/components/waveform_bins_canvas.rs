@@ -5,20 +5,11 @@ use futures_util::StreamExt;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-// Группируем состояние зума в одну структуру для чистоты кода
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct ZoomState {
-    level: f32,  // Коэффициент масштабирования (1.0 = исходный, 80.0 = максимум)
-    offset: f32, // Смещение просмотра трека (от 0.0 до 1.0)
-}
-
-// JS-код отрисовки волноформы на canvas. Вынесен в константу, чтобы не раздувать компонент.
 const WAVEFORM_JS: &str = r#"
     let data = await dioxus.recv();
     let targetPeaks = data.peaks || [];
     let progress = data.progress || 0;
-    let zoom = data.zoom || 1.0;
-    let scroll = data.scroll || 0.0;
+    let reset = data.reset || false;
 
     let canvas = document.getElementById("waveform-canvas");
     if (!canvas) return;
@@ -34,18 +25,56 @@ const WAVEFORM_JS: &str = r#"
         ctx.scale(dpr, dpr);
     }
 
-    // Отменяем предыдущий кадр анимации, чтобы циклы не наслоились
+    // Зум/скролл живут здесь (в JS), чтобы якорение было точным и без гонок
+    if (reset || window.waveZoom === undefined) {
+        window.waveZoom = 1.0;
+        window.waveScroll = 0.0;
+    }
+
     if (window.waveformAnimId) {
         cancelAnimationFrame(window.waveformAnimId);
     }
 
-    // Пересоздаём массив только если длина реально изменилась,
-    // сохраняя старые значения, чтобы не сбрасывать в плоскую линию
     if (!window.animatedPeaks || window.animatedPeaks.length !== targetPeaks.length) {
         window.animatedPeaks = new Array(targetPeaks.length).fill(0);
     }
 
     const LERP_FACTOR = 0.18;
+
+    // Якорный зум: точка под курсором остаётся на месте
+    window.zoomAt = function(mousePct, factor) {
+        let zoom = window.waveZoom;
+        let scroll = window.waveScroll;
+        let totalLen = targetPeaks.length;
+        if (totalLen === 0) return;
+
+        let newZoom = Math.max(1.0, Math.min(80.0, zoom * factor));
+
+        // Точная видимая доля с учётом клампа в рендерере
+
+        let visibleOld = 1.0 / zoom;
+
+        let startOld = scroll * (1.0 - visibleOld);   // непрерывно
+        let anchor = startOld + mousePct * visibleOld;
+
+
+        let visibleNew = 1.0 / newZoom;
+        let startNew = anchor - mousePct * visibleNew;
+
+        // Обратно в долю прокручиваемого диапазона.
+        // При visibleNew >= 1.0 (zoom = 1.0) весь трек виден — скролл всегда 0.
+        let newScroll;
+        if (visibleNew >= 1.0) {
+            newScroll = 0;
+        } else {
+            newScroll = startNew / (1.0 - visibleNew);
+        }
+        newScroll = Math.max(0, Math.min(1, newScroll));
+
+        window.waveZoom = newZoom;
+        window.waveScroll = newScroll;
+        window.waveformAnimId = requestAnimationFrame(animateFrame);
+    };
 
     function animateFrame() {
         ctx.clearRect(0, 0, width, height);
@@ -53,7 +82,9 @@ const WAVEFORM_JS: &str = r#"
         let totalLen = targetPeaks.length;
         if (totalLen === 0) return;
 
-        // Окно зума: сколько баров помещается на холст (минимум 10 при макс. приближении)
+        let zoom = window.waveZoom;
+        let scroll = window.waveScroll;
+
         let visibleBarsCount = Math.max(10, Math.floor(totalLen / zoom));
 
         let maxScrollStartIndex = totalLen - visibleBarsCount;
@@ -62,19 +93,16 @@ const WAVEFORM_JS: &str = r#"
 
         let step = width / (endIdx - startIdx);
 
-        // Динамический зазор в зависимости от плотности баров
         let gap = 2.0;
         if (visibleBarsCount <= 100) gap = 3.0;
         else if (visibleBarsCount <= 300) gap = 1.5;
         else if (visibleBarsCount <= 600) gap = 1.0;
         else gap = 0.5;
 
-        // Защита от отрицательной ширины: минимум 1 пиксель на бар
         let barWidth = Math.max(1.0, step - gap);
 
         let isAnimationDone = true;
 
-        // ШАГ А: плавно обновляем высоты (LERP) для всего массива
         for (let i = 0; i < totalLen; i++) {
             let diff = targetPeaks[i] - window.animatedPeaks[i];
             if (Math.abs(diff) > 0.001) {
@@ -85,7 +113,6 @@ const WAVEFORM_JS: &str = r#"
             }
         }
 
-        // ШАГ Б: рисуем только видимое окно
         for (let i = startIdx; i < endIdx; i++) {
             let current = window.animatedPeaks[i];
             let barHeight = Math.max(0.06, current) * height;
@@ -93,7 +120,6 @@ const WAVEFORM_JS: &str = r#"
             let x = (i - startIdx) * step;
             let y = (height - barHeight) / 2;
 
-            // Прогресс привязан к глобальному треку
             if ((i / totalLen) <= progress) {
                 ctx.fillStyle = "rgba(90, 122, 122, 1)";
             } else {
@@ -101,8 +127,6 @@ const WAVEFORM_JS: &str = r#"
             }
 
             ctx.beginPath();
-            // Скругляем только если бар достаточно широкий (>= 3px),
-            // иначе обычный прямоугольник рендерится чётче
             if (ctx.roundRect && barWidth >= 3.0) {
                 ctx.roundRect(x, y, barWidth, barHeight, 4);
             } else {
@@ -131,10 +155,8 @@ pub fn WaveformBinsCanvas(
     // Локальный стейт для хранения реальных высот столбиков
     let mut waveform_peaks = use_signal(|| vec![0.0f32; num_bins]);
 
-    let mut zoom = use_signal(|| ZoomState {
-        level: 1.0,
-        offset: 0.0,
-    });
+    // Сигнал сброса зума при загрузке нового трека
+    let mut reset_zoom = use_signal(|| false);
 
     // Фоновый слушатель событий от аудио-ядра
     use_future(move || {
@@ -146,10 +168,7 @@ pub fn WaveformBinsCanvas(
                         waveform_peaks.set(vec![0.0f32; num_bins]);
 
                         // Сбрасываем зум в исходное состояние при запуске нового трека
-                        zoom.set(ZoomState {
-                            level: 1.0,
-                            offset: 0.0,
-                        });
+                        reset_zoom.set(true);
                     }
                     PlayerEvent::WaveformChunkReady {
                         chunk,
@@ -199,15 +218,18 @@ pub fn WaveformBinsCanvas(
             0.0
         };
 
-        let zoom_data = zoom();
+        // let zoom_data = zoom();
+        let do_reset = reset_zoom();
+        if do_reset {
+            reset_zoom.set(false);
+        }
 
         spawn(async move {
             let eval = dioxus::document::eval(WAVEFORM_JS);
             let _ = eval.send(serde_json::json!({
                 "peaks": p_vec,
                 "progress": progress_ratio,
-                "zoom": zoom_data.level,
-                "scroll": zoom_data.offset
+                "reset": do_reset
             }));
         });
     });
@@ -223,46 +245,24 @@ pub fn WaveformBinsCanvas(
                 let delta_y = e.delta().strip_units().y;
                 let click_x = e.element_coordinates().x as f32;
 
-                let current_state = zoom();
-                let old_zoom = current_state.level;
+                // factor: delta_y < 0 — приближение
+                let factor = if delta_y < 0.0 { 1.15 } else { 1.0 / 1.15 };
 
-                // delta_y < 0 — крутим от себя / приближение
-                let mut new_zoom = if delta_y < 0.0 { old_zoom * 1.15 } else { old_zoom / 1.15 };
-                new_zoom = new_zoom.clamp(1.0, 80.0);
-
-                if new_zoom != old_zoom {
-                    // Запрашиваем реальную ширину Canvas из WebView в момент скролла
-                    let mut size_eval = dioxus::document::eval(
-                        r#"
-                        let canvas = document.getElementById("waveform-canvas");
-                        dioxus.send(canvas ? canvas.clientWidth : 0);
-                        "#
-                    );
-
-                    spawn(async move {
-                        if let Ok(serde_json::Value::Number(w_val)) = size_eval.recv().await {
-                            if let Some(canvas_width) = w_val.as_f64() {
-                                let canvas_width = canvas_width as f32;
-
-                                if canvas_width > 0.0 {
-                                    // Процент мыши относительно реальной ширины Canvas
-                                    let mouse_screen_pct = (click_x / canvas_width).clamp(0.0, 1.0);
-
-                                    // Глобальная точка трека под курсором при текущем зуме
-                                    let global_target_pct = current_state.offset + (mouse_screen_pct / old_zoom);
-
-                                    // Новый скролл так, чтобы эта точка осталась под курсором
-                                    let new_scroll = (global_target_pct - (mouse_screen_pct / new_zoom)).clamp(0.0, 1.0);
-
-                                    zoom.set(ZoomState {
-                                        level: new_zoom,
-                                        offset: new_scroll,
-                                    });
-                                }
-                            }
-                        }
-                    });
-                }
+                // Вся логика зума — в JS (синхронно, без гонок и без запроса ширины)
+                let eval = dioxus::document::eval(
+                    r#"
+                    let data = await dioxus.recv();
+                    let canvas = document.getElementById("waveform-canvas");
+                    if (!canvas || !window.zoomAt) return;
+                    let w = canvas.clientWidth || 1;
+                    let pct = Math.max(0, Math.min(1, data.x / w));
+                    window.zoomAt(pct, data.factor);
+                    "#
+                );
+                let _ = eval.send(serde_json::json!({
+                    "x": click_x,
+                    "factor": factor
+                }));
             }
         }
     }
