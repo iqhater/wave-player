@@ -95,7 +95,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                 });
             },
 
-            onmousemove: move |e| {
+            /* onmousemove: move |e| {
                 if let Some(mode) = dragging() {
                     let left = cl();
                     let cx = e.data().client_coordinates().x as f32 - left;
@@ -143,6 +143,66 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                 if dragging().is_some() {
                     dragging.set(None);
                 }
+            }, */
+
+            // Полноэкранный оверлей захвата: перехватывает движение мыши,
+            // даже когда курсор слетает с маркеров/региона (как в крутилках)
+            if dragging().is_some() {
+                div {
+                    // class: "fixed inset-0 z-50 cursor-grab bg-transparent select-none",
+                    class: if dragging() == Some("M") {
+                        "fixed inset-0 z-50 cursor-grab bg-transparent select-none"
+                    } else {
+                        "fixed inset-0 z-50 cursor-w-resize bg-transparent select-none"
+                    },
+                    style: "-webkit-tap-highlight-color: transparent;",
+                    onmousemove: move |e| {
+                        if let Some(mode) = dragging() {
+                            let left = cl();
+                            let cx = e.data().client_coordinates().x as f32 - left;
+
+                            match mode {
+                                "M" => {
+                                    let dx = cx - anchor_x();
+                                    let ds = (dx / 600.0) * total_duration;
+                                    let rw = anchor_r() - anchor_l();
+                                    let mut ns = anchor_l() + ds;
+                                    ns = ns.max(0.0).min((total_duration - rw).max(0.0));
+                                    loop_start.set(ns);
+                                    loop_end.set(ns + rw);
+                                }
+                                "L" => {
+                                    let dx = cx - anchor_x();
+                                    let ds = (dx / 600.0) * total_duration;
+                                    let new_l = (anchor_val() + ds)
+                                        .max(0.0)
+                                        .min((loop_end() - 0.5).max(0.0));
+                                    loop_start.set(new_l);
+                                }
+                                "R" => {
+                                    let dx = cx - anchor_x();
+                                    let ds = (dx / 600.0) * total_duration;
+                                    let new_r = (anchor_val() + ds)
+                                        .max(loop_start() + 0.5)
+                                        .min(total_duration);
+                                    loop_end.set(new_r);
+                                }
+                                _ => {}
+                            }
+                        }
+                    },
+                    onmouseup: move |_| {
+                        if dragging().is_some() {
+                            dragging.set(None);
+                            send_set_loop();
+                        }
+                    },
+                    onmouseleave: move |_| {
+                        if dragging().is_some() {
+                            dragging.set(None);
+                        }
+                    },
+                }
             },
 
             // Область петли
@@ -163,6 +223,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                 div { class: "absolute top-0 right-8 cursor-pointer material-symbols-outlined text-primary",
                     style: "font-size: 20px; cursor: not-allowed;",
                     title: "Export audio loop",
+                    // Не даём клику по кнопке запускать захват региона
+                    onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| {},
                     span { "save_as" }
                 }
@@ -184,6 +246,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     },
                     style: "font-size: 20px;",
                     title: "Toggle loop",
+                    // Не даём клику по кнопке запускать захват региона
+                    onmousedown: move |e| e.stop_propagation(),
                     onclick: {
                         move |_| {
                             let _ = ctx.command_tx.read().send(PlayerCommand::ToggleLoop(!is_loop_enabled()));
