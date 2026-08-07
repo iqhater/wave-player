@@ -161,7 +161,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
 
                 // Кнопка export
                 div { class: "absolute top-0 right-8 cursor-pointer material-symbols-outlined text-primary",
-                    style: "font-size: 20px;",
+                    style: "font-size: 20px; cursor: not-allowed;",
                     title: "Export audio loop",
                     onclick: move |_| {},
                     span { "save_as" }
@@ -177,7 +177,11 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     span { if is_loop_enabled() { "repeat_on" } else { "laps" } }
                 } */
                 // Toggle loop icon
-                div { class: "absolute top-0 right-1 hover:bg-secondary-container rounded-xl cursor-pointer hover:scale-105 material-symbols-outlined text-primary",
+                div { class: if is_loop_enabled() {
+                        "absolute top-0 right-1 hover:bg-secondary-container rounded-xl cursor-pointer hover:scale-105 material-symbols-outlined bg-primary"
+                    } else {
+                        "absolute top-0 right-1 hover:bg-secondary-container rounded-xl cursor-pointer hover:scale-105 material-symbols-outlined text-primary"
+                    },
                     style: "font-size: 20px;",
                     title: "Toggle loop",
                     onclick: {
@@ -186,7 +190,14 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                             is_loop_enabled.set(!is_loop_enabled());
                         }
                     },
-                    span { if is_loop_enabled() { "repeat_on" } else { "laps" } }
+                    span {
+                        class: if is_loop_enabled() {
+                            "text-surface-bright hover:text-primary"
+                        } else {
+                            "text-primary"
+                        },
+                        "laps"
+                    }
                 }
             }
 
