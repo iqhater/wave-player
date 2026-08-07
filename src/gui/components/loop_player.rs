@@ -202,7 +202,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     anchor_val.set(loop_start());
                 },
                 // Метка над левым маркером
-                div { class: "absolute -top-15 left-1/2 -translate-x-1/2 text-xs text-primary font-mono whitespace-nowrap",
+                div { class: "absolute -top-15 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/10 px-1 rounded-md text-center whitespace-nowrap",
                     "{format_time(loop_start() as u32)}"
                 }
                 span { class: "material-symbols-outlined text-primary/90 text-[48px] hover:scale-115", "drag_indicator" }
@@ -220,7 +220,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     anchor_val.set(loop_end());
                 },
                 // Метка над правым маркером
-                div { class: "absolute -top-15 left-1/2 -translate-x-1/2 text-xs text-primary font-mono whitespace-nowrap",
+                div { class: "absolute -top-15 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/10 px-1 rounded-md text-center whitespace-nowrap",
                     "{format_time(loop_end() as u32)}"
                 }
                 span { class: "material-symbols-outlined text-primary/90 text-[48px] hover:scale-115", "drag_indicator" }
