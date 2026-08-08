@@ -42,7 +42,7 @@ pub fn Sidebar() -> Element {
                 class: "mt-auto p-4 bg-primary rounded-2xl text-surface border border-outline/10 shadow-lg max-w-[200px]",
                 p {
                     class: "text-[10px] text-on-surface font-medium mb-1 tracking-wide font-label-md text-label-md font-bold",
-                    "Version 0.1.0-alpha.4"
+                    "Version {crate::shared::APP_VERSION}"
                 }
                 p {
                     class: "text-sm font-semibold mb-3 leading-tight tracking-tight text-surface-bright",

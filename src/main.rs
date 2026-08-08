@@ -36,7 +36,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let y: u32 = 1040;
 
     let window = WindowBuilder::new()
-        .with_title("Wave Player. Version: 0.1.0-alpha.4")
+        .with_title(format!(
+            "Wave Player. Version: {}",
+            crate::shared::APP_VERSION
+        ))
         .with_inner_size(LogicalSize::new(x, y))
         .with_position(Position::new(PhysicalPosition::new(
             (3840 - x) / 3,
