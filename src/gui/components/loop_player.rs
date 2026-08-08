@@ -151,7 +151,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                 div {
                     // class: "fixed inset-0 z-50 cursor-grab bg-transparent select-none",
                     class: if dragging() == Some("M") {
-                        "fixed inset-0 z-50 cursor-grab bg-transparent select-none"
+                        "fixed inset-0 z-50 cursor-grabbing bg-transparent select-none"
                     } else {
                         "fixed inset-0 z-50 cursor-w-resize bg-transparent select-none"
                     },
@@ -160,11 +160,12 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                         if let Some(mode) = dragging() {
                             let left = cl();
                             let cx = e.data().client_coordinates().x as f32 - left;
+                            let container_width = 600.0;
 
                             match mode {
                                 "M" => {
                                     let dx = cx - anchor_x();
-                                    let ds = (dx / 600.0) * total_duration;
+                                    let ds = (dx / container_width) * total_duration;
                                     let rw = anchor_r() - anchor_l();
                                     let mut ns = anchor_l() + ds;
                                     ns = ns.max(0.0).min((total_duration - rw).max(0.0));
@@ -173,7 +174,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                                 }
                                 "L" => {
                                     let dx = cx - anchor_x();
-                                    let ds = (dx / 600.0) * total_duration;
+                                    let ds = (dx / container_width) * total_duration;
                                     let new_l = (anchor_val() + ds)
                                         .max(0.0)
                                         .min((loop_end() - 0.5).max(0.0));
@@ -181,7 +182,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                                 }
                                 "R" => {
                                     let dx = cx - anchor_x();
-                                    let ds = (dx / 600.0) * total_duration;
+                                    let ds = (dx / container_width) * total_duration;
                                     let new_r = (anchor_val() + ds)
                                         .max(loop_start() + 0.5)
                                         .min(total_duration);

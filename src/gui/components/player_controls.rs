@@ -305,7 +305,7 @@ fn VolumeControl() -> Element {
                         volume.set(current_volume);
                     },
                 }
-                span { class: "text-label-sm font-bold text-secondary min-w-[32px]", "{(volume*100.0):.0}%" }
+                span { class: "text-label-sm font-bold text-secondary w-10 text-right whitespace-nowrap", "{(volume*100.0):.0}%" }
             }
         }
     }
