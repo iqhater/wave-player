@@ -457,9 +457,11 @@ pub fn run_audio_loop(
                         ) {
                             Ok((duration, channels, sample_rate)) => {
                                 current_track_duration = duration;
+                                accumulated_time = Duration::from_secs(0);
                                 player.play();
 
                                 track_start_time = Instant::now();
+                                playback_progress.store(0, Ordering::Relaxed);
                                 has_track = true;
 
                                 // get track metadata artist and title
