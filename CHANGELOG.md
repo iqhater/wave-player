@@ -1,4 +1,15 @@
-## [unreleased]
+## [0.1.0-alpha.5] - 2026-08-08
+
+### 🚀 Features
+
+- Add dark theme support
+- *(version)* Read app version from Cargo.toml
+
+### 🐛 Bug Fixes
+
+- Fix volume panel shift and loop drag cursor
+- *(filters)* Rework LP/HP filters with math-iir-fir
+## [0.1.0-alpha.4] - 2026-08-07
 
 ### 🚀 Features
 
