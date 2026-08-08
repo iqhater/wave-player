@@ -518,13 +518,13 @@ pub fn run_audio_loop(
                     }
                     PlayerCommand::SetLowPassFilter(cutoff) => {
                         lp_cutoff.store(
-                            cutoff.map(|c| c.clamp(20.0, 20000.0) as u32).unwrap_or(0),
+                            cutoff.map(|c| c.clamp(5.0, 24000.0) as u32).unwrap_or(0),
                             Ordering::Relaxed,
                         );
                     }
                     PlayerCommand::SetHighPassFilter(cutoff) => {
                         hp_cutoff.store(
-                            cutoff.map(|c| c.clamp(20.0, 20000.0) as u32).unwrap_or(0),
+                            cutoff.map(|c| c.clamp(20.0, 20500.0) as u32).unwrap_or(0),
                             Ordering::Relaxed,
                         );
                     }

@@ -9,6 +9,7 @@ license = "MIT"
 rodio = { version = "0.22.1", features = ["symphonia-all"] } # main audio engine lib
 rodio-wsola = { version = "0.2.0" } # for pitch preserving with speed change
 hound = "3.5.1" # audio??
+math-iir-fir = "0.5.15" # biquad LP/HP filters
 dioxus = { version = "0.7.10", features = ["desktop", "router"] } # main ui framework
 generational-box = "0.7.9" # dioxus extension for clone and copy signals without .clone() struggling at ui components
 flume = "0.12.0" # stream channels for commands from ui to engine

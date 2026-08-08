@@ -10,10 +10,10 @@ pub fn FiltersAndSpatial() -> Element {
 
     let mut show_menu_popup = use_signal(|| false);
     let mut ms_mode = use_signal(|| "none".to_string()); // Signal<String> ("none", "mid", "side")
-    let mut stereo_width = use_signal(|| 1.0); // Signal<f32>, диапазон 0.0 .. 2.0 (дефолт 1.0)
-    let mut pan = use_signal(|| 0.0 as f32); // Signal<f32>, диапазон -1.0 .. 1.0 (дефолт 0.0)
-    let mut lp_cutoff = use_signal(|| 20000.0f32); // Signal<f32>, диапазон 20.0 .. 20000.0
-    let mut hp_cutoff = use_signal(|| 20.0f32); // Signal<f32>, диапазон 20.0 .. 20000.0
+    let stereo_width = use_signal(|| 1.0); // Signal<f32>, диапазон 0.0 .. 2.0 (дефолт 1.0)
+    let pan = use_signal(|| 0.0 as f32); // Signal<f32>, диапазон -1.0 .. 1.0 (дефолт 0.0)
+    let lp_cutoff = use_signal(|| 20000.0f32); // Signal<f32>, диапазон 20.0 .. 20000.0
+    let hp_cutoff = use_signal(|| 20.0f32); // Signal<f32>, диапазон 20.0 .. 20000.0
     let mut lp_enabled = use_signal(|| false); // Signal<bool>
     let mut hp_enabled = use_signal(|| false); // Signal<bool>
 
@@ -146,11 +146,12 @@ pub fn FiltersAndSpatial() -> Element {
                                         AudioKnob {
                                             label: "LP".to_string(),
                                             value: lp_cutoff,
-                                            min: 200.0,
+                                            min: 5.0,
                                             max: 20000.0,
-                                            step: 50.0,
+                                            step: 20.0,
                                             display_value: format!("{:.0} Hz", lp_cutoff),
                                             disabled: !lp_enabled(),
+                                            logarithmic: true,
                                             on_value_change: {
                                                  // let ctx = ctx.clone();
                                                  // let lp_enabled = lp_enabled.clone();
@@ -185,10 +186,11 @@ pub fn FiltersAndSpatial() -> Element {
                                             label: "HP".to_string(),
                                             value: hp_cutoff,
                                             min: 20.0,
-                                            max: 5000.0,
-                                            step: 10.0,
+                                            max: 20500.0,
+                                            step: 20.0,
                                             display_value: format!("{:.0} Hz", hp_cutoff),
                                             disabled: !hp_enabled(),
+                                            logarithmic: true,
                                             on_value_change: {
                                                 // let ctx = ctx.clone();
                                                 // let hp_enabled = hp_enabled.clone();
@@ -224,15 +226,21 @@ fn AudioKnob(
     step: f32,
     display_value: String,
     disabled: Option<bool>,
+    #[props(optional)] logarithmic: Option<bool>,
     #[props(optional)] on_value_change: Option<EventHandler<f32>>,
 ) -> Element {
     let is_disabled = disabled.unwrap_or(false);
+    let is_logarithmic = logarithmic.unwrap_or(false);
     let mut is_dragging = use_signal(|| false);
-    let mut start_y = use_signal(|| 0.0);
-    let mut start_val = use_signal(|| 0.0);
+    let mut start_y = use_signal(|| 0.0f32);
+    let mut start_val = use_signal(|| 0.0f32);
 
-    // Вычисляем угол поворота стрелки: от -135 до +135 градусов (всего 270)
-    let percent = (value() - min) / (max - min);
+    // Нормализованная позиция 0..1: линейная или логарифмическая.
+    let percent = if is_logarithmic {
+        ((value().ln() - min.ln()) / (max.ln() - min.ln())).clamp(0.0, 1.0)
+    } else {
+        ((value() - min) / (max - min)).clamp(0.0, 1.0)
+    };
     let rotation = -135.0 + (percent * 270.0);
 
     let opacity_class = if is_disabled {
@@ -256,14 +264,27 @@ fn AudioKnob(
                 style: "-webkit-tap-highlight-color: transparent;",
                 onmousemove: move |e| {
                     if is_dragging() {
-                        let delta_y = (start_y() - e.screen_coordinates().y) as f32;
-                        let range = max - min;
-                        let change = (delta_y / 150.0) * range;
-                        let raw_next = start_val() + change;
-                        let stepped_next = (raw_next / step).round() * step;
-                        value.set(stepped_next.clamp(min, max));
-                        if let Some(cb) = &on_value_change {
-                            cb.call(value());
+                        let delta_y = (start_y() - e.screen_coordinates().y as f32) as f32;
+                        let next = if is_logarithmic {
+                            // Лог-шкала: одинаковый угол ручки = одинаковый диапазон на слух.
+                            let ln_min = min.ln();
+                            let range = (max / min).ln();
+                            let start_t = (start_val().ln() - ln_min) / range;
+                            let t = (start_t + delta_y / 150.0).clamp(0.0, 1.0);
+                            (ln_min + t * range).exp().clamp(min, max)
+                        } else {
+                            // Линейная шкала (например, для Pan).
+                            let raw = start_val() + (delta_y / 150.0) * (max - min);
+                            let stepped = (raw / step).round() * step;
+                            stepped.clamp(min, max)
+                        };
+
+                        // Не дублируем и не шлём, если значение не изменилось
+                        if next != value() {
+                            value.set(next);
+                            if let Some(cb) = &on_value_change {
+                                cb.call(next);
+                            }
                         }
                     }
                 },
@@ -284,7 +305,7 @@ fn AudioKnob(
 
                 onmousedown: move |e| {
                     is_dragging.set(true);
-                    start_y.set(e.screen_coordinates().y);
+                    start_y.set(e.screen_coordinates().y as f32);
                     start_val.set(value());
                 },
 
