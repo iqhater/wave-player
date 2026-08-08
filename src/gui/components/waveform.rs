@@ -176,7 +176,7 @@ pub fn Waveform() -> Element {
             LoopPlayer { total_duration: dur },
 
             div {
-                class: "w-full h-28 relative flex items-center neumorph-sunken rounded-2xl hover:shadow overflow-hidden",
+                class: "w-full h-28 relative flex items-center neumorph-sunken rounded-2xl hover:shadow",
                 onmounted: move |el| {
                     spawn(async move {
                         if let Ok(rect) = el.get_client_rect().await {
@@ -231,7 +231,7 @@ pub fn Waveform() -> Element {
                     div { class: "absolute -top-0 w-2 h-2 rounded-full bg-primary" }
 
                     // Метка времени над курсором
-                    div { class: "absolute top-0 left-1/2 -translate-x-1/2 text-xs text-primary font-mono whitespace-nowrap z-50",
+                    div { class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-50",
                         "{format_time(pos as u32)}"
                     }
                 }
