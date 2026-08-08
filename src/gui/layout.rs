@@ -5,6 +5,7 @@ use super::components::{
     errors_toast::ErrorsToast, footer::Footer, player_controls::PlayerControls, sidebar::Sidebar,
     theme_toggle::ThemeToggle,
 };
+use super::theme::{Theme, use_theme, use_theme_provider};
 
 // Geist link "https://fonts.googleapis.com/css2?family=Geist:wght@100;300;400;500;600;700;800;900&display=swap"
 static FAVICON: Asset = asset!("/assets/favicon.png");
@@ -19,8 +20,15 @@ static MATERIAL_SYMBOLS_OUTLINED: Asset =
 
 #[component]
 pub fn RootLayout() -> Element {
+    use_theme_provider();
     let route = use_route::<Route>();
     let hide_controls = matches!(route, Route::TermsOfService | Route::PrivacyPolicy);
+    let theme = use_theme();
+    let body_class = if theme.get() == Theme::Dark {
+        "dark bg-surface text-on-surface"
+    } else {
+        "bg-surface text-on-surface"
+    };
 
     rsx! {
 
@@ -39,7 +47,7 @@ pub fn RootLayout() -> Element {
         // document::Stylesheet {  href: MATERIAL_SYMBOLS_OUTLINED }
 
         // Container for the entire app
-        body { class: "bg-surface text-on-surface",
+        body { class: "{body_class}",
             div { class: "flex h-screen w-full overflow-hidden relative",
 
                 ThemeToggle {}

@@ -82,10 +82,61 @@
   --font-family-label-md: "Geist", sans-serif;
 }
 
+/* Dark theme palette — overrides the Material 3 tokens under the `.dark` class */
+.dark {
+  --color-inverse-surface: #e2e2e2;
+  --color-surface-container: #201f1f;
+  --color-surface-tint: #a5c4c4;
+  --color-tertiary-fixed-dim: #c7c7c3;
+  --color-primary: #a5c4c4;
+  --color-on-tertiary: #30302d;
+  --color-on-primary-fixed-variant: #3d4a3c;
+  --color-surface-dim: #141414;
+  --color-on-error-container: #ffdad6;
+  --color-on-surface-variant: #c4c8c0;
+  --color-on-primary: #1f3a3a;
+  --color-secondary-fixed: #e4e2dd;
+  --color-primary-container: #3d5a5a;
+  --color-on-background: #e2e2e2;
+  --color-on-surface: #e2e2e2;
+  --color-outline: #8e928c;
+  --color-surface-bright: #3a3a3a;
+  --color-on-tertiary-container: #e3e2df;
+  --color-secondary: #c8c6c2;
+  --color-on-tertiary-fixed-variant: #464744;
+  --color-tertiary-container: #464743;
+  --color-tertiary-fixed: #e3e2df;
+  --color-inverse-on-surface: #303030;
+  --color-surface-container-high: #2a2a2a;
+  --color-secondary-container: #464743;
+  --color-on-secondary: #30302e;
+  --color-on-secondary-fixed-variant: #474743;
+  --color-tertiary: #c7c7c3;
+  --color-secondary-fixed-dim: #c8c6c2;
+  --color-on-secondary-container: #e1dfda;
+  --color-error-container: #93000a;
+  --color-outline-variant: #444842;
+  --color-surface-container-lowest: #0f0f0f;
+  --color-on-error: #690005;
+  --color-primary-fixed-dim: #bbcbb8;
+  --color-surface-variant: #444842;
+  --color-error: #ffb4ab;
+  --color-background: #141414;
+  --color-on-tertiary-fixed: #1b1c1a;
+  --color-inverse-primary: #7a9999;
+  --color-on-primary-fixed: #121e13;
+  --color-surface-container-highest: #353535;
+  --color-on-secondary-fixed: #1b1c19;
+  --color-surface: #141414;
+  --color-surface-container-low: #1c1c1c;
+  --color-on-primary-container: #d7e7d4;
+  --color-primary-fixed: #d7e7d4;
+}
+
 @layer base {
   body {
     font-family: "Geist", sans-serif;
-    background-color: #fbf9f8;
+    background-color: var(--color-background);
     overflow: hidden;
   }
 }
@@ -148,4 +199,41 @@
     border: 1px solid rgba(255, 255, 255, 0.3);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
+
+  /* For Dark Theme*/
+  :where(.dark) .neumorph-raised {
+    background: #1c1c1c;
+    box-shadow:
+      -6px -6px 16px rgba(0, 0, 0, 0.6),
+      6px 6px 16px rgba(0, 0, 0, 0.4);
+  }
+
+  :where(.dark) .neumorph-sunken {
+    background: #1c1c1c;
+    box-shadow:
+      inset -4px -4px 10px rgba(0, 0, 0, 0.6),
+      inset 4px 4px 10px rgba(0, 0, 0, 0.35);
+  }
+
+  :where(.dark) .play-button-outer {
+    box-shadow:
+      -8px -8px 20px rgba(0, 0, 0, 0.6),
+      8px 8px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  :where(.dark) .glass-toggle {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  :where(.dark) .neumorph-raised:hover {
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+  }
+
+  :where(.dark) .neumorph-sunken:hover {
+    box-shadow: inset 0 4px 12px rgba(0, 0, 0, 0.5);
+  }
+
 }
