@@ -95,7 +95,16 @@ pub fn SettingsCheckbox(
     rsx! {
         label {
             id: "{id}",
-            class: "px-2 py-1.5 rounded-md text-[16px] text-label-md flex items-center gap-2.5 hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors w-full select-none whitespace-nowrap",
+            class: format!(
+                    "rounded-md text-[16px] text-label-md flex items-center hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors select-none whitespace-nowrap {}",
+                    if text.is_empty() {
+                        // Квадратный контейнер и строгая центровка для иконки без текста
+                        "w-8 h-8 justify-center"
+                    } else {
+                        // Стандартные отступы и выравнивание по левому краю для чекбоксов с текстом
+                        "px-2 py-1.5 w-full gap-2.5 justify-start"
+                    }
+            ),
 
             div {
                 class: format!(
@@ -127,7 +136,9 @@ pub fn SettingsCheckbox(
                 onchange: move |e| onchange.call(e.value()),
             }
 
-            span { "{text}" }
+            if !text.is_empty() {
+                    span { "{text}" }
+            }
         }
     }
 }
