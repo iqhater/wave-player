@@ -9,7 +9,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
     let ctx = use_context::<PlayerContext>();
 
     let mut loop_start = use_signal(|| total_duration * 0.75);
-    let mut loop_end = use_signal(|| (total_duration * 0.75) * 0.1);
+    let mut loop_end = use_signal(|| (total_duration * 0.85).min(total_duration));
 
     // 2. Делаем пропс реактивным с помощью use_reactive!
     // Как только total_duration изменится, этот эффект гарантированно перезапустится
@@ -21,7 +21,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
             // Ситуация А: Самый первый запуск (петля еще на нулях)
             if loop_start() == 0.0 && loop_end() == 0.0 {
                 let start_pos = duration * 0.75; // 1/4 от конца трека
-                let end_pos = (start_pos + (duration * 0.10)).min(duration); // 10% длины петли
+                let end_pos = (start_pos + (duration * 0.85)).min(duration); // 10% длины петли
 
                 loop_start.set(start_pos);
                 loop_end.set(end_pos);
