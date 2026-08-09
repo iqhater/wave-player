@@ -1,5 +1,6 @@
 pub mod album_art;
 pub mod bpm_key;
+pub mod drag_and_drop;
 pub mod errors_toast;
 pub mod filters_spatial;
 pub mod footer;

@@ -1,5 +1,9 @@
+use super::drag_and_drop::DragAndDropFile;
 use super::loop_player::LoopPlayer;
 use super::waveform_bins_canvas::WaveformBinsCanvas;
+use dioxus::html::HasFileData;
+use std::path::PathBuf;
+
 use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::PlayerEvent;
@@ -20,6 +24,8 @@ pub fn Waveform() -> Element {
         Duration::from_millis(init_playback.load(Ordering::Relaxed) as u64).as_secs_f32()
     }); */
     let mut duration_secs = use_signal(|| 0.0);
+    let mut has_track = use_signal(|| false);
+
     // let waveform_data = ctx.waveform_data;
 
     // Loop state (shared with LoopPlayer)
@@ -27,6 +33,7 @@ pub fn Waveform() -> Element {
     // Drag state
     let mut dragging = use_signal(|| None::<&'static str>);
     let mut last_mouse_x = use_signal(|| 0.0 as f32);
+    let mut is_dragover_event = use_signal(|| true);
 
     // Container rect for mouse calculations
     let mut container_rect: Signal<Option<(f32, f32)>> = use_signal(|| None);
@@ -72,6 +79,9 @@ pub fn Waveform() -> Element {
                     } => {
                         duration_secs.set(d.as_secs_f32());
                         position_secs.set(0.0);
+                        has_track.set(true);
+                        is_dragover_event.set(false);
+
                         // is_playing.set(true);
                         println!("DEBUG EVENT: PlayerEvent::Started");
                     }
@@ -172,8 +182,33 @@ pub fn Waveform() -> Element {
             tabindex: "0",
             onkeydown: seek,
 
-            // Loop Player component
-            LoopPlayer { total_duration: dur },
+            // Darg & Drop events in parent container
+            ondragover: move |evt: DragEvent| {
+                evt.prevent_default();
+                is_dragover_event.set(true);
+            },
+            ondragleave: move |_| {
+                if has_track() {
+                    is_dragover_event.set(false);
+                } else {
+                    is_dragover_event.set(true);
+                }
+            },
+            ondrop: move |evt: DragEvent| {
+                evt.prevent_default();
+                is_dragover_event.set(false);
+                if let Some(file) = evt.files().first() {
+                    let path = PathBuf::from(file.path());
+                    let _ = ctx.command_tx.read().send(PlayerCommand::LoadFile(
+                        path.to_string_lossy().to_string(),
+                    ));
+                }
+            },
+
+            if has_track() {
+                // Loop Player component
+                LoopPlayer { total_duration: dur },
+            }
 
             div {
                 class: "w-full h-28 relative flex items-center neumorph-sunken rounded-2xl hover:shadow",
@@ -219,39 +254,45 @@ pub fn Waveform() -> Element {
                     }
                 },
 
-                // Waveform bars
-                // WaveformBins { total_duration: duration_secs, cursor_progress }
-                WaveformBinsCanvas { total_duration: duration_secs, cursor_progress }
+                if has_track() {
 
-                // Timeline cursor
-                div { class: "absolute top-0 bottom-0 flex items-center justify-center z-25 cursor-grab hover:scale-105 duration-20 ease-linear pointer-events-none",
-                    style: "left: {cursor_progress}%; transform: translateX(-50%);",
-                    title: "Timeline marker",
-                    div { class: "w-[2px] h-full bg-primary shadow-[0_0_8px_rgba(84,98,83,0.5)]" }
-                    div { class: "absolute -top-0 w-2 h-2 rounded-full bg-primary" }
+                    // Waveform bars
+                    // WaveformBins { total_duration: duration_secs, cursor_progress }
+                    WaveformBinsCanvas { total_duration: duration_secs, cursor_progress }
 
-                    // Метка времени над курсором
-                    div { class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-50",
-                        "{format_time(pos as u32)}"
-                    }
-                }
-            }
+                    // Timeline cursor
+                    div { class: "absolute top-0 bottom-0 flex items-center justify-center z-25 cursor-grab hover:scale-105 duration-20 ease-linear pointer-events-none",
+                        style: "left: {cursor_progress}%; transform: translateX(-50%);",
+                        title: "Timeline marker",
+                        div { class: "w-[2px] h-full bg-primary shadow-[0_0_8px_rgba(84,98,83,0.5)]" }
+                        div { class: "absolute -top-0 w-2 h-2 rounded-full bg-primary" }
 
-            // Time scale
-            div { class: "relative w-full h-6 mt-1 select-none",
-                {time_marks.into_iter().map(|(pct, label)| {
-                    rsx! {
-                        div {
-                            class: "absolute top-0 flex flex-col items-center",
-                            style: "left: {pct}%; transform: translateX(-50%);",
-                            div { class: "w-[1px] h-1.5 bg-secondary/40" }
-                            span {
-                                class: "text-[12px] text-secondary/60 mt-0.5 whitespace-nowrap",
-                                "{label}"
-                            }
+                        // Метка времени над курсором
+                        div { class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-50",
+                            "{format_time(pos as u32)}"
                         }
                     }
-                })}
+                }
+                DragAndDropFile { is_dragover_event: is_dragover_event }
+            }
+
+            if has_track() {
+                // Time scale
+                div { class: "relative w-full h-6 mt-1 select-none",
+                    {time_marks.into_iter().map(|(pct, label)| {
+                        rsx! {
+                            div {
+                                class: "absolute top-0 flex flex-col items-center",
+                                style: "left: {pct}%; transform: translateX(-50%);",
+                                div { class: "w-[1px] h-1.5 bg-secondary/40" }
+                                span {
+                                    class: "text-[12px] text-secondary/60 mt-0.5 whitespace-nowrap",
+                                    "{label}"
+                                }
+                            }
+                        }
+                    })}
+                }
             }
         }
     }
