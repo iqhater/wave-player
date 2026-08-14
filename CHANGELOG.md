@@ -1,3 +1,16 @@
+## [unreleased]
+
+### 🚀 Features
+
+- Add drag-and-drop file loading to the player
+- *(player)* Improve waveform and audio controls
+
+### 🐛 Bug Fixes
+
+- Center empty-text checkboxes under filter knobs
+- Keep timeline cursor label visible at track edges
+- Reset timeline cursor when loading a new track
+- Set sane default loop region on track load
 ## [0.1.0-alpha.5] - 2026-08-08
 
 ### 🚀 Features
