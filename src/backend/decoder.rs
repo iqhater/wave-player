@@ -41,7 +41,7 @@ pub fn load_file_with_decoder(
         .with_byte_len(len)
         .with_seekable(true)
         .with_coarse_seek(true)
-        .with_hint("mp3")
+        // .with_hint("mp3")
         .build()
         .map_err(|_| AudioError::FileCorrupted)?;
 

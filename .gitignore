@@ -9,3 +9,4 @@
 **/*.rs.bk
 
 /webview_cache
+bug_report.txt

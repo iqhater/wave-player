@@ -1,6 +1,6 @@
 [package]
 name = "wave_player"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 authors = ["iqhater <iqhater@yandex.ru>"]
 edition = "2024"
 license = "MIT"
@@ -11,6 +11,7 @@ rodio-wsola = { version = "0.2.0" } # for pitch preserving with speed change
 hound = "3.5.1" # audio??
 math-iir-fir = "0.5.15" # biquad LP/HP filters
 dioxus = { version = "0.7.10", features = ["desktop", "router"] } # main ui framework
+# web-sys = "0.3.104" # Raw bindings to Web APIs
 generational-box = "0.7.9" # dioxus extension for clone and copy signals without .clone() struggling at ui components
 flume = "0.12.0" # stream channels for commands from ui to engine
 tokio = { version = "1.52.3", features = ["time"] } # ??
@@ -19,9 +20,11 @@ async-broadcast = "=0.7.2" # event bus broadcasting events from engine to ui
 futures-util = "0.3" # for async reading with async-broadcast
 markdown = "1.0.0" # for policy and terms text
 serde_json = "1.0.151" # deserialize into canvas bars data
+serde = { version = "1.0", features = ["derive"] }
 stratum-dsp = "1.0.0" # bpm & key detection
 audiotags = "0.5.0" # get meta info from tacks: title, album cover, etc...
 base64 = "0.23.0" # to convert jpeg album covers
+rusqlite = { version = "0.40.2", features = ["bundled"] } # SQLite db wrapper (bundled — компилируется сам SQLite, не требует системной библиотеки)
 # rayon = "1.12.0"
 
 [features]

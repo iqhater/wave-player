@@ -1,5 +1,9 @@
 use crate::backend::metadata::TrackMetadata;
+use crate::shared::store_types::{AppConfig, HistoryEntry, Track};
+use std::path::PathBuf;
+
 use async_broadcast::Sender as BroadcastSender;
+
 use std::time::Duration;
 
 // --- UI  <---  Audio Engine Events (События) ---
@@ -37,6 +41,7 @@ pub enum PlayerEvent {
     // BPM & Key detection result
     BpmKeyDetected {
         bpm: f32,
+        beat_offset: f32,
         key_name: String,
         key_numerical: String,
     },
@@ -62,3 +67,27 @@ pub enum AudioError {
 }
 pub type ErrorSender = BroadcastSender<AudioError>;
 // pub type ErrorReceiver = BroadcastReceiver<AudioError>;
+
+// ——— Снапшоты от Store ———
+#[derive(Clone, Debug)]
+pub enum StoreEvent {
+    ConfigLoaded {
+        config: AppConfig,
+    },
+    FavoritesLoaded {
+        tracks: Vec<Track>,
+    },
+    // Favorites changed event
+    FavoriteChanged {
+        path: PathBuf,
+        is_favorite: bool,
+    },
+    /// Счётчик прослушиваний обновился.
+    TrackPlaysCountUpdated {
+        path: PathBuf,
+        count: u64,
+    },
+}
+
+pub type StoreSender = BroadcastSender<StoreEvent>;
+// pub type StoreReceiver = BroadcastReceiver<StoreEvent>;

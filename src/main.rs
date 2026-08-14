@@ -12,13 +12,23 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
+use backend::store::config::ConfigStore;
+use shared::store_types::AppConfig;
+
+use crate::gui::theme::{Theme, use_theme, use_theme_provider};
+use backend::store::run::run_store_loop;
 use shared::command_types::PlayerCommand;
-use shared::event_types::{AudioError, PlayerEvent};
+use shared::command_types::StoreCommand;
+use shared::event_types::{AudioError, PlayerEvent, StoreEvent};
 
 use dioxus::desktop::tao::dpi::{LogicalSize, PhysicalPosition, Position};
 use dioxus::desktop::tao::window::WindowBuilder;
 use dioxus::prelude::*;
+use futures_util::StreamExt;
 use generational_box::*;
+
+// fix of FOUC — Flash of Unstyled Content
+const TAILWIND_CSS: &str = include_str!("../assets/tailwind.css");
 
 // Shared audio state accessible from any component
 #[derive(Clone, Copy)]
@@ -29,11 +39,24 @@ pub struct PlayerContext {
     playback_progress: GenerationalBox<Arc<AtomicU32>, SyncStorage>,
     status_rx: GenerationalBox<BroadcastReceiver<PlayerEvent>, SyncStorage>,
     error_rx: GenerationalBox<BroadcastReceiver<AudioError>, SyncStorage>,
+
+    // Store communication channel
+    store_cmd_tx: GenerationalBox<flume::Sender<StoreCommand>, SyncStorage>,
+    store_event_rx: GenerationalBox<BroadcastReceiver<StoreEvent>, SyncStorage>,
+
+    // Settings JSON app config
+    pub config: GenerationalBox<AppConfig, SyncStorage>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let x: u32 = 1320;
-    let y: u32 = 1040;
+    // init app config
+    let data_dir = std::env::current_dir().unwrap().join("wave_player_data");
+    let config_store = ConfigStore::new(data_dir.join("config.json"));
+    let config = config_store.load_with_default();
+
+    // Размер окна из конфига (или дефолт, если не сохранён)
+    let x: u32 = config.window.width.unwrap_or(1320);
+    let y: u32 = config.window.height.unwrap_or(1040);
 
     let window = WindowBuilder::new()
         .with_title(format!(
@@ -54,6 +77,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut status_tx, status_rx) = broadcast::<PlayerEvent>(24);
     let (mut error_tx, error_rx) = broadcast::<AudioError>(10);
 
+    // init store communication
+    let (store_tx, store_rx) = flume::bounded::<StoreCommand>(32);
+    let (mut store_broadcast_tx, store_broadcast_rx) = broadcast::<StoreEvent>(12);
+    store_broadcast_tx.set_overflow(true);
+    run_store_loop(store_rx, store_broadcast_tx, data_dir.clone(), config_store).unwrap();
+
     // 3. ВКЛЮЧАЕМ OVERFLOW (Защита от лагов интерфейса)
     // Если UI на мобилке или десктопе просел по FPS, старый спам позиций трека
     // сотрется сам, не тормозя аудио-поток
@@ -63,12 +92,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     run_audio_loop(cmd_rx, playback_progress.clone(), status_tx, error_tx).unwrap();
 
     let owner = SyncStorage::owner();
+
     // Собираем контекст для UI Dioxus
     let player_ctx = PlayerContext {
+        // main channels
         command_tx: owner.insert(cmd_tx),
         playback_progress: owner.insert(playback_progress),
         status_rx: owner.insert(status_rx),
         error_rx: owner.insert(error_rx),
+
+        // store channels
+        store_cmd_tx: owner.insert(store_tx),
+        store_event_rx: owner.insert(store_broadcast_rx),
+
+        // app's config context
+        config: owner.insert(config),
     };
 
     // Вместо current_dir() используем путь к самому .exe файлу
@@ -86,8 +124,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_cfg(
             dioxus::desktop::Config::new()
                 .with_data_directory(cache_dir) // 2. Жестко привязываем WebView2 к этой папке
-                .with_window(window),
-            // .with_custom_head(format!("<style>{}</style>", custom_css)),
+                .with_window(window)
+                .with_custom_head(format!("<style id=\"app-styles\">{TAILWIND_CSS}</style>")),
         )
         .with_context_provider(move || Box::new(player_ctx))
         .launch(App);
@@ -97,26 +135,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[component]
 fn App() -> Element {
-    let ctx = use_context::<PlayerContext>();
-
-    // Load default track on startup
-    use_effect(move || {
-        spawn(async move {
-            let path = PathBuf::from("D:/Web_Dev/Dev/Rust/wave_player/audio_examples")
-                /* let path = PathBuf::from(
-                    "F:/Downloads/Déepalma Ibiza 2026 FLAC/Déepalma Ibiza 2026 FLAC",
-                ) */
-                .join("ENG_US_M_PaulQ.mp3");
-            /* .join(
-                "49.  Yves Murasca & Rosario Galati  -  Déepalma Ibiza 2026 (Beach Feelings).flac",
-            ); */
-            let _ = ctx
-                .command_tx
-                .read()
-                .send(PlayerCommand::LoadFile(path.to_string_lossy().to_string()));
-        });
-    });
-
     rsx! {
         Router::<Route> {}
     }

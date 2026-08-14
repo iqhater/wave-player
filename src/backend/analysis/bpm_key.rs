@@ -5,6 +5,7 @@ use stratum_dsp::{AnalysisConfig, analyze_audio};
 #[derive(Clone, Debug, PartialEq)]
 pub struct BpmKeyResult {
     pub bpm: f32,
+    pub beat_offset: f32,
     pub key_name: String,
     pub key_numerical: String,
 }
@@ -33,6 +34,8 @@ pub fn analyze_bpm_key(
     let result = analyze_audio(&mono_samples, sample_rate, AnalysisConfig::default())
         .map_err(|_| AudioError::FileCorrupted)?;
 
+    let beat_offset = result.beat_grid.downbeats.first().copied().unwrap_or(0.0);
+
     /* let conf = compute_confidence(&result);
 
     println!(
@@ -42,9 +45,17 @@ pub fn analyze_bpm_key(
     println!("Key: {} ({})", result.key.name(), result.key.numerical()); // e.g., "C major (1A)", "Am (1B)"
     println!("Beat grid stability: {:.2}", result.grid_stability); */
 
+    // println!("Beat Grid Bars: {:#?}", result.beat_grid.bars);
+    // println!("Beat Grid Beats: {:#?}", result.beat_grid.beats);
+    // println!("Beat Grid Downbeats: {:#?}", result.beat_grid.downbeats);
+
+    // println!("BPM: {:#?}", result.bpm);
+    // println!("BPM Confidence: {:#?}", result.bpm_confidence);
+
     Ok(BpmKeyResult {
         // bpm: (result.bpm * 10.0).round() / 10.0, // Round to 1 decimal
         bpm: result.bpm.round(), // Round to 1 decimal
+        beat_offset,
         key_name: result.key.name(),
         key_numerical: result.key.numerical(),
     })

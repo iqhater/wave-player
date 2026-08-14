@@ -1,5 +1,5 @@
+use crate::shared::store_types::ThemePreference;
 use dioxus::prelude::*;
-
 /// User's theme preference.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Theme {
@@ -35,12 +35,28 @@ impl ThemeContext {
 }
 
 /// Provides the [`ThemeContext`] to the whole component tree.
-pub fn use_theme_provider() {
-    let theme = use_signal(|| Theme::default());
+pub fn use_theme_provider(initial_theme: Theme) {
+    let theme = use_signal(|| initial_theme);
     use_context_provider(|| ThemeContext(theme));
 }
 
 /// Reads the [`ThemeContext`]. Panics if called outside a provider.
 pub fn use_theme() -> ThemeContext {
     use_context::<ThemeContext>()
+}
+
+impl Theme {
+    pub fn from_pref(pref: ThemePreference) -> Self {
+        match pref {
+            ThemePreference::Light => Theme::Light,
+            ThemePreference::Dark => Theme::Dark,
+        }
+    }
+
+    pub fn to_pref(self) -> ThemePreference {
+        match self {
+            Theme::Light => ThemePreference::Light,
+            Theme::Dark => ThemePreference::Dark,
+        }
+    }
 }

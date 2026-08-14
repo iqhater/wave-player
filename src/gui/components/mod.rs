@@ -14,3 +14,4 @@ pub mod waveform;
 // pub mod waveform_bins;
 pub mod waveform_bins_canvas;
 pub use player_controls::ControlIconButton;
+pub mod beat_grid;

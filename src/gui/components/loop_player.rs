@@ -86,6 +86,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
     rsx! {
         div {
             class: "absolute w-[600px] h-28 rounded-xl select-none pointer-events-auto",
+            "data-loop-start": "{loop_start()}",
+            "data-loop-end": "{loop_end()}",
             // style: "width: 600px;",
             onmounted: move |el| {
                 spawn(async move {
@@ -211,6 +213,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                 class: "absolute inset-y-0 border-2 border-dashed rounded-xl border-primary/60 cursor-grab z-10",
                 class: if is_loop_enabled() { "bg-primary/20" } else { "bg-primary/5" },
                 style: "left: {lp}%; right: {100.0 - rp}%;",
+                // style: "left: var(--wave-loop-start, {lp}%); right: calc(100% - var(--wave-loop-end, {rp}%));",
                 onmousedown: move |e| {
                     e.stop_propagation();
                     dragging.set(Some("M"));
@@ -270,6 +273,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
             div {
                 class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20",
                 style: "left: {lp}%;",
+                // style: "left: var(--wave-loop-start, {lp}%);",
                 onmousedown: move |e| {
                     e.stop_propagation();
                     dragging.set(Some("L"));
@@ -288,6 +292,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
             div {
                 class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20",
                 style: "left: {rp}%;",
+                // style: "left: var(--wave-loop-end, {rp}%);",
                 onmousedown: move |e| {
                     e.stop_propagation();
                     dragging.set(Some("R"));

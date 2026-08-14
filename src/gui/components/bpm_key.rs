@@ -9,6 +9,7 @@ pub fn BpmKey() -> Element {
 
     let mut bpm = use_signal(|| 0.0f32);
     let mut key = use_signal(|| "—".to_string());
+    let mut key_camelot = use_signal(|| "".to_string());
 
     use_future(move || {
         let mut status_rx = ctx.status_rx.read().clone();
@@ -16,14 +17,19 @@ pub fn BpmKey() -> Element {
             while let Some(status) = status_rx.next().await {
                 match status {
                     PlayerEvent::BpmKeyDetected {
-                        bpm: b, key_name, ..
+                        bpm: b,
+                        key_name,
+                        key_numerical,
+                        ..
                     } => {
                         bpm.set(b);
                         key.set(key_name);
+                        key_camelot.set(format!("{}{}{}", "(", key_numerical, ")"));
                     }
                     PlayerEvent::Started { .. } => {
                         bpm.set(0.0);
                         key.set("—".to_string());
+                        key_camelot.set("".to_string());
                     }
                     _ => {}
                 }
@@ -41,7 +47,7 @@ pub fn BpmKey() -> Element {
             }
             div { class: "flex flex-col",
                 span { class: "text-label-sm uppercase text-secondary opacity-60", "Key" }
-                span { class: "font-bold text-primary", "{key()}" }
+                span { class: "font-bold text-primary", "{key()} {key_camelot()}" }
             }
         }
     }

@@ -36,7 +36,8 @@ pub fn FiltersAndSpatial() -> Element {
                 div { class: "absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-30",
                     div { class: "neumorph-raised rounded-xl p-2 flex flex-col gap-1 min-w-[140px]",
                         onmouseenter: move |_| show_menu_popup.set(true),
-                        onmouseleave: move |_| show_menu_popup.set(false),
+                        // onmouseleave: move |_| show_menu_popup.set(false),
+                        // onpointercancel: move |_| show_menu_popup.set(false),
 
                         // --- СЕКЦИЯ 1: РЕЖИМ КАНАЛОВ (Моно / Стерео / M-S) ---
                         div { class: "flex flex-col gap-2",
@@ -148,7 +149,7 @@ pub fn FiltersAndSpatial() -> Element {
                                             value: lp_cutoff,
                                             min: 5.0,
                                             max: 20000.0,
-                                            step: 20.0,
+                                            step: 10.0,
                                             display_value: format!("{:.0} Hz", lp_cutoff),
                                             disabled: !lp_enabled(),
                                             logarithmic: true,
@@ -187,7 +188,7 @@ pub fn FiltersAndSpatial() -> Element {
                                             value: hp_cutoff,
                                             min: 20.0,
                                             max: 20500.0,
-                                            step: 20.0,
+                                            step: 10.0,
                                             display_value: format!("{:.0} Hz", hp_cutoff),
                                             disabled: !hp_enabled(),
                                             logarithmic: true,
@@ -259,10 +260,12 @@ fn AudioKnob(
 
     rsx! {
         if is_dragging() {
+
+            // Overlay for convenience mouse dragging
             div {
                 class: "fixed inset-0 z-50 cursor-ns-resize bg-transparent select-none",
                 style: "-webkit-tap-highlight-color: transparent;",
-                onmousemove: move |e| {
+                onpointermove: move |e| {
                     if is_dragging() {
                         let delta_y = (start_y() - e.screen_coordinates().y as f32) as f32;
                         let next = if is_logarithmic {
@@ -288,26 +291,43 @@ fn AudioKnob(
                         }
                     }
                 },
-                onmouseup: move |_| is_dragging.set(false),
-                onmouseleave: move |_| is_dragging.set(false),
+                onpointerup: move |_| is_dragging.set(false),
+                onpointercancel: move |_| is_dragging.set(false),
+                // onmouseleave: move |_| is_dragging.set(false),
             }
         }
 
         div {
             class: "flex flex-col items-center gap-1.5 flex-1 min-w-[70px] select-none transition-opacity duration-150 {opacity_class}",
 
-            span { class: "text-[10px] font-medium opacity-60 text-center tracking-tight truncate w-full", "{label}" }
+            span { class: "text-[10px] font-medium opacity-60 text-center tracking-tight truncate w-full", "{label}" },
 
             // Корпус крутилки
             div {
                 class: "relative w-12 h-12 rounded-full border flex items-center justify-center cursor-ns-resize transition-all duration-150 shadow-sm focus:outline-none focus:ring-0 active:bg-transparent select-none {knob_style_classes}",
-                style: "-webkit-tap-highlight-color: transparent;",
+                style: "-webkit-tap-highlight-color: transparent; touch-action: none;",
 
-                onmousedown: move |e| {
+                onpointerdown: move |e| {
                     is_dragging.set(true);
                     start_y.set(e.screen_coordinates().y as f32);
                     start_val.set(value());
                 },
+
+                /* onmousedown: move |e| {
+                    is_dragging.set(true);
+                    start_y.set(e.screen_coordinates().y as f32);
+                    start_val.set(value());
+                }, */
+
+                // TODO:
+                /* ondoubleclick: move |_| {
+                    println!("Double clicked!");
+                    is_dragging.set(false);
+                    value.set(0.0);
+                    if let Some(cb) = &on_value_change {
+                        cb.call(0.0);
+                    }
+                }, */
 
                 svg {
                     class: "w-11 h-11 relative overflow-visible pointer-events-none select-none",

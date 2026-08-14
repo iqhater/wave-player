@@ -2,10 +2,15 @@ use dioxus::prelude::*;
 
 #[component]
 pub fn Settings() -> Element {
+    // Timeline
     let mut is_cursor_checked = use_signal(|| false);
     let mut is_time_markers_checked = use_signal(|| true);
     let mut is_loop_enabled = use_signal(|| true);
     let mut is_standart_timeline_view = use_signal(|| false);
+
+    // Grid
+    let mut is_gird_enabled = use_signal(|| false);
+    let mut is_gird_snap = use_signal(|| false);
     rsx! {
         h1 { "Settings screen!" }
         SettingsCheckbox {
@@ -31,6 +36,18 @@ pub fn Settings() -> Element {
             text: "Change timeline standart progress view with round cursor.",
             checked: is_standart_timeline_view,
             onchange: move |_| is_standart_timeline_view.set(!is_standart_timeline_view()),
+        }
+        SettingsCheckbox {
+            id: "beat-grid",
+            text: "Enable beat grid. (When the BPM is already calculated).",
+            checked: is_gird_enabled,
+            onchange: move |_| is_gird_enabled.set(!is_gird_enabled()),
+        }
+        SettingsCheckbox {
+            id: "beat-grid-snap",
+            text: "Enable mouse timeline cursor to grid snap when seek.",
+            checked: is_gird_snap,
+            onchange: move |_| is_gird_snap.set(!is_gird_snap()),
         }
 
         // Shortcuts

@@ -1,9 +1,10 @@
 // Импортируем наши типы каналов и команд
-use super::bpm_key::analyze_bpm_key;
+use super::analysis::bpm_key::analyze_bpm_key;
+use super::analysis::waveform::stream_waveform;
+
 use super::filters::LiveFilteredSource;
 use super::spatial::LiveSpatialSource;
 
-use crate::backend::generate_waveform::stream_waveform;
 use crate::backend::metadata::parse_track_metadata;
 
 use crate::shared::command_types::PlayerCommand;
@@ -82,82 +83,6 @@ pub fn run_audio_loop(
         let mut is_loop = false;
         let mut current_loop_start = Duration::from_secs(0);
         let mut current_loop_end = Duration::from_secs(0);
-
-        // Вспомогательная функция для перезапуска трека с новыми параметрами эффектов.
-        // Вы можете вынести её как метод вашей структуры, передавая туда нужные переменные.
-        let reload_track_with_effects =
-            |
-            path: &std::path::PathBuf,
-            speed: f32,
-            preserve_pitch: bool,
-            acc_time: &mut std::time::Duration,      // передаем по ссылке
-            start_time: &mut std::time::Instant,    // передаем по ссылке
-        | {
-            // Считаем точное текущее время воспроизведения перед остановкой
-            let elapsed = start_time.elapsed();
-
-            // Рассчитываем пройденный отрезок и обновляем оригинальную переменную через разыменование (*)
-            *acc_time += elapsed.mul_f32(speed);
-
-            // Останавливаем плеер
-            player.stop();
-
-            let file = File::open(path)
-                .map_err(|_| AudioError::FileNotFound(path.to_string_lossy().into_owned()))
-                .unwrap();
-
-            let len = fs::metadata(path)
-                .map_err(|_| AudioError::FileCorrupted)
-                .unwrap()
-                .len();
-
-            let decoder = DecoderBuilder::new()
-                .with_data(BufReader::new(file))
-                .with_byte_len(len)
-                .with_seekable(true)
-                .with_coarse_seek(true)
-                .with_hint("mp3")
-                .build()
-                .map_err(|_| AudioError::FileCorrupted)
-                .unwrap();
-
-            // Используем обновленное время для перемотки
-            /* match decoder.try_seek(*acc_time) {
-                Ok(()) => {
-                    *start_time = Instant::now();
-                    playback_progress.store(
-                        acc_time.as_millis() as u32,
-                        Ordering::Relaxed,
-                    );
-                }
-                Err(_) => {
-                    let _ = error_tx.try_broadcast(AudioError::SeekFailed);
-                }
-            } */
-
-            if preserve_pitch {
-                let wsola_source = decoder.wsola(speed);
-                let filtered = LiveFilteredSource::new(wsola_source, lp_cutoff.clone(), hp_cutoff.clone());
-                let spatial = LiveSpatialSource::new(
-                    filtered,
-                    ms_mode.clone(),
-                    stereo_width.clone(),
-                    pan.clone(),
-                );
-                player.append(spatial);
-                // player.set_speed(speed);
-            } else {
-                let filtered = LiveFilteredSource::new(decoder, lp_cutoff.clone(), hp_cutoff.clone());
-                let spatial = LiveSpatialSource::new(
-                    filtered,
-                    ms_mode.clone(),
-                    stereo_width.clone(),
-                    pan.clone(),
-                );
-                player.append(spatial);
-                player.set_speed(speed);
-            }
-        };
 
         // 4. Главный бесконечный цикл обработки
         loop {
@@ -408,12 +333,18 @@ pub fn run_audio_loop(
                             if let Some(ref path) = current_path {
                                 if current_preserve_pitch {
                                     // Если нужен WSOLA — перезапускаем поток
-                                    reload_track_with_effects(
+                                    let _ = reload_track_with_effects(
+                                        &player,
                                         path,
                                         current_speed,
                                         current_preserve_pitch,
                                         &mut accumulated_time,
                                         &mut track_start_time,
+                                        lp_cutoff.clone(),
+                                        hp_cutoff.clone(),
+                                        ms_mode.clone(),
+                                        stereo_width.clone(),
+                                        pan.clone(),
                                     );
                                 } else {
                                     // Если обычный режим — просто меняем скорость «на лету» без перезапуска
@@ -431,12 +362,18 @@ pub fn run_audio_loop(
                                 if let Some(ref path) = current_path {
                                     // При смене режима ВСЕГДА перезапускаем трек,
                                     // чтобы переключиться между чистым декодером и WSOLA
-                                    reload_track_with_effects(
+                                    let _ = reload_track_with_effects(
+                                        &player,
                                         path,
                                         current_speed,
                                         current_preserve_pitch,
                                         &mut accumulated_time,
                                         &mut track_start_time,
+                                        lp_cutoff.clone(),
+                                        hp_cutoff.clone(),
+                                        ms_mode.clone(),
+                                        stereo_width.clone(),
+                                        pan.clone(),
                                     );
                                 }
                             }
@@ -504,6 +441,7 @@ pub fn run_audio_loop(
                                             let _ = status_tx_clone.try_broadcast(
                                                 PlayerEvent::BpmKeyDetected {
                                                     bpm: result.bpm,
+                                                    beat_offset: result.beat_offset,
                                                     key_name: result.key_name,
                                                     key_numerical: result.key_numerical,
                                                 },
@@ -601,6 +539,71 @@ pub fn run_audio_loop(
             }
         }
     });
+
+    Ok(())
+}
+
+fn reload_track_with_effects(
+    player: &Player,
+    path: &Path,
+    speed: f32,
+    preserve_pitch: bool,
+    acc_time: &mut Duration,
+    start_time: &mut Instant,
+    lp_cutoff: Arc<AtomicU32>,
+    hp_cutoff: Arc<AtomicU32>,
+    ms_mode: Arc<AtomicU32>,
+    stereo_width: Arc<AtomicU32>,
+    pan: Arc<AtomicU32>,
+) -> Result<(), AudioError> {
+    // Считаем точное текущее время воспроизведения
+    let elapsed = start_time.elapsed();
+
+    // Сохраняем позицию в оригинальном времени трека
+    *acc_time += elapsed.mul_f32(speed);
+
+    // Пока сохраняем текущее поведение без изменений
+    player.stop();
+
+    let file = File::open(path)
+        .map_err(|_| AudioError::FileNotFound(path.to_string_lossy().into_owned()))?;
+
+    let len = fs::metadata(path)
+        .map_err(|_| AudioError::FileCorrupted)?
+        .len();
+
+    let decoder = DecoderBuilder::new()
+        .with_data(BufReader::new(file))
+        .with_byte_len(len)
+        .with_seekable(true)
+        .with_coarse_seek(true)
+        // .with_hint("mp3")
+        .build()
+        .map_err(|_| AudioError::FileCorrupted)?;
+
+    /*
+     * Seek пока намеренно не включаем.
+     * На этом этапе переносим только изоляцию функции,
+     * не меняя поведение WSOLA/seek.
+     */
+
+    if preserve_pitch {
+        let wsola_source = rodio_wsola::Wsola::new(decoder, 1.0);
+
+        let filtered = LiveFilteredSource::new(wsola_source, lp_cutoff, hp_cutoff);
+
+        let spatial = LiveSpatialSource::new(filtered, ms_mode, stereo_width, pan);
+
+        player.append(spatial);
+        player.set_speed(speed);
+    } else {
+        let filtered = LiveFilteredSource::new(decoder, lp_cutoff, hp_cutoff);
+
+        let spatial = LiveSpatialSource::new(filtered, ms_mode, stereo_width, pan);
+
+        player.append(spatial);
+        player.set_speed(speed);
+    }
 
     Ok(())
 }

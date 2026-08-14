@@ -4,9 +4,11 @@ use super::waveform_bins_canvas::WaveformBinsCanvas;
 use dioxus::html::HasFileData;
 use std::path::PathBuf;
 
+use super::beat_grid::BeatGrid;
 use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::PlayerEvent;
+
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use std::sync::atomic::Ordering;
@@ -232,24 +234,80 @@ pub fn Waveform() -> Element {
                         let element_x = e.element_coordinates().x as f32;
 
                         // Ширину берём прямо из canvas (в тех же CSS-пикселях, что и offsetX)
-                        let mut size_eval = dioxus::document::eval(
+                        /* let mut size_eval = dioxus::document::eval(
                             r#"
                             let c = document.getElementById("waveform-canvas");
                             dioxus.send(c ? c.clientWidth : 0);
                             "#
+                        ); */
+                        let mut snap_eval = dioxus::document::eval(
+                            r#"
+                            let d = await dioxus.recv();
+
+                            const canvas =
+                                document.getElementById("waveform-canvas");
+
+                            const width =
+                                canvas ? canvas.clientWidth : 1;
+
+                            const pct =
+                                Math.max(0, Math.min(1, d.x / width));
+
+                            const rawSecs =
+                                window.waveTimeAtViewportPct
+                                    ? window.waveTimeAtViewportPct(pct)
+                                    : d.duration * pct;
+
+                            const snappedSecs =
+                                window.snapToGrid
+                                    ? window.snapToGrid(rawSecs)
+                                    : rawSecs;
+
+                            dioxus.send(snappedSecs);
+                            "#
                         );
 
                         spawn(async move {
-                            if let Ok(serde_json::Value::Number(w)) = size_eval.recv().await {
+                            let _ = snap_eval.send(serde_json::json!({
+                                "x": element_x,
+                                "duration": duration_secs(),
+                            }));
+                            if let Ok(serde_json::Value::Number(s)) = snap_eval.recv().await {
+                                if let Some(secs) = s.as_f64() {
+                                    let _ = ctx.command_tx.read().send(PlayerCommand::Seek(
+                                        Duration::from_secs_f32(secs as f32),
+                                    ));
+                                }
+                            }
+                            /* if let Ok(serde_json::Value::Number(w)) = size_eval.recv().await {
                                 if let Some(w) = w.as_f64() {
                                     if w > 0.0 {
                                         let pct = (element_x / w as f32).clamp(0.0, 1.0);
+                                        const rawSecs = window.waveTimeAtViewportPct
+                                            ? window.waveTimeAtViewportPct(pct)
+                                            : d.duration * pct;
+                                        // Магнит к сетке (уважает snap-настройку внутри JS)
+                                        let mut snap_eval = dioxus::document::eval(
+                                            r#"
+                                            let data = await dioxus.recv();
+                                            dioxus.send(window.snapToGrid ? window.snapToGrid(data.secs) : data.secs);
+                                            "#
+                                        );
+                                        let _ = snap_eval.send(serde_json::json!({ "secs": raw_secs }));
+                                        if let Ok(serde_json::Value::Number(s)) = snap_eval.recv().await {
+                                            if let Some(secs) = s.as_f64() {
+                                                let _ = ctx.command_tx.read().send(PlayerCommand::Seek(
+                                                    Duration::from_secs_f32(secs as f32),
+                                                ));
+                                            }
+                                        }
+                                        /* let pct = (element_x / w as f32).clamp(0.0, 1.0);
                                         let _ = ctx.command_tx.read().send(PlayerCommand::Seek(
                                             Duration::from_secs_f32(duration_secs() * pct),
-                                        ));
+                                        )); */
                                     }
                                 }
-                            }
+                            } */
                         });
                     }
                 },
@@ -260,9 +318,13 @@ pub fn Waveform() -> Element {
                     // WaveformBins { total_duration: duration_secs, cursor_progress }
                     WaveformBinsCanvas { total_duration: duration_secs, cursor_progress }
 
+                    // TODO: fix gird zoom and calcualtions
+                    BeatGrid { total_duration: duration_secs, snap_enabled: true }
+
                     // Timeline cursor
                     div { class: "absolute top-0 bottom-0 flex items-center justify-center z-25 cursor-grab hover:scale-105 duration-20 ease-linear pointer-events-none",
-                        style: "left: {cursor_progress}%; transform: translateX(-50%);",
+                        // style: "left: {cursor_progress}%; transform: translateX(-50%);",
+                        style: "left: var(--wave-cursor-pct, {cursor_progress}%); transform: translateX(-50%);",
                         title: "Timeline marker",
                         div { class: "w-[2px] h-full bg-primary shadow-[0_0_8px_rgba(84,98,83,0.5)]" }
                         div { class: "absolute -top-0 w-2 h-2 rounded-full bg-primary" }

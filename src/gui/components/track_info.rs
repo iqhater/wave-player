@@ -7,8 +7,8 @@ use futures_util::StreamExt;
 pub fn TrackInfo() -> Element {
     let ctx = use_context::<PlayerContext>();
 
-    let mut title = use_signal(|| "ID".to_string());
-    let mut artist = use_signal(|| "ID".to_string());
+    let mut title = use_signal(|| "".to_string());
+    let mut artist = use_signal(|| "".to_string());
 
     use_future(move || {
         let mut status_rx = ctx.status_rx.read().clone();
