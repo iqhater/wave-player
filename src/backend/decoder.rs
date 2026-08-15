@@ -49,6 +49,8 @@ pub fn load_file_with_decoder(
     let sample_rate = decoder.sample_rate();
     let duration = decoder.total_duration().unwrap_or(Duration::from_secs(0));
 
+    let decoder = decoder.amplify_decibel(3.5);
+
     let filtered = LiveFilteredSource::new(decoder, lp_cutoff, hp_cutoff);
     let spatial = LiveSpatialSource::new(filtered, ms_mode, width, pan);
     player.append(spatial);
