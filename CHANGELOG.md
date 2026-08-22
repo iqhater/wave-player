@@ -1,4 +1,17 @@
-## [unreleased]
+## [0.1.0-alpha.7] - 2026-08-22
+
+### 🚀 Features
+
+- Add 3.5 dB decoder gain
+
+### 🐛 Bug Fixes
+
+- Correct waveform binning and peak detection
+
+### 🚜 Refactor
+
+- Complete player state integration
+## [0.1.0-alpha.6] - 2026-08-14
 
 ### 🚀 Features
 
