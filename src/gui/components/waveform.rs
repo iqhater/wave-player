@@ -47,6 +47,8 @@ pub fn Waveform() -> Element {
     let pos = position_secs();
     let dur = duration_secs();
 
+    let mut is_playing = use_signal(|| false);
+
     // Cursor progress in percent
     let cursor_progress = if dur > 0.0 { (pos / dur) * 100.0 } else { 0.0 };
 
@@ -82,13 +84,21 @@ pub fn Waveform() -> Element {
                         duration_secs.set(d.as_secs_f32());
                         position_secs.set(0.0);
                         has_track.set(true);
+                        is_playing.set(true);
                         is_dragover_event.set(false);
 
                         // is_playing.set(true);
                         println!("DEBUG EVENT: PlayerEvent::Started");
                     }
+                    PlayerEvent::Paused => {
+                        is_playing.set(false);
+                    }
+
+                    PlayerEvent::Resumed => {
+                        is_playing.set(true);
+                    }
                     PlayerEvent::Finished => {
-                        // is_playing.set(false);
+                        is_playing.set(false);
                         position_secs.set(0.0); // сброс на 0;
                         println!("DEBUG EVENT: PlayerEvent::Finished");
                     }
@@ -101,11 +111,26 @@ pub fn Waveform() -> Element {
     use_future(move || {
         let pos = ctx.playback_progress.read().clone();
         async move {
+            let mut last_position = pos.load(Ordering::Relaxed);
+
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+
+                let current_position = pos.load(Ordering::Relaxed);
+
+                if current_position != last_position {
+                    last_position = current_position;
+                    position_secs.set(current_position as f32 / 1000.0);
+                }
+            }
+        }
+        /* let pos = ctx.playback_progress.read().clone();
+        async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(16)).await;
                 position_secs.set(pos.load(Ordering::Relaxed) as f32 / 1000.0);
             }
-        }
+        } */
     });
 
     // Time marks

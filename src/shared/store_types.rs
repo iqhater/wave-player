@@ -45,12 +45,6 @@ pub struct AppConfig {
     pub interface: InterfaceConfig,
 }
 
-/* impl Default for AppConfig {
-    fn default() -> Self {
-        window: WindowConfig
-    }
-} */
-
 // ===== Окно =====
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -75,27 +69,36 @@ impl Default for ThemePreference {
 // ===== Аудио =====
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AudioConfig {
+    /// Playback
     pub volume: f32,
     pub speed: f32,
     pub preserve_pitch: bool,
     pub repeat_track: bool,
-    /// LP/HP: None = выключен, Some(freq) = включён.
+
+    /// Filters
     pub low_pass: Option<f32>,
     pub high_pass: Option<f32>,
-    /// Пока u8 (0=стерео, 1=Mid, 2=Side). Позже переведём в enum.
-    pub mid_side: u8,
+
+    /// Spatial
+    pub mid_side: u8, //TODO: enum
     pub stereo_width: f32,
     pub pan: f32,
 }
+
 impl Default for AudioConfig {
     fn default() -> Self {
         Self {
+            // Playback
             volume: 0.35,
             speed: 1.0,
             preserve_pitch: false,
             repeat_track: false,
+
+            // Filters
             low_pass: None,
             high_pass: None,
+
+            // Spatial
             mid_side: 0,
             stereo_width: 1.0,
             pan: 0.0,

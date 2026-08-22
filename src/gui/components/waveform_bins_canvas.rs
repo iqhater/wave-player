@@ -1,5 +1,6 @@
 use crate::PlayerContext;
 use crate::shared::event_types::PlayerEvent;
+use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use std::sync::atomic::Ordering;
@@ -455,12 +456,28 @@ pub fn WaveformBinsCanvas(
     // чтобы закрашивание волны обновлялось синхронно с курсором
     use_future(move || {
         let pos = ctx.playback_progress.read().clone();
+
+        async move {
+            let mut last_position = pos.load(Ordering::Relaxed);
+
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+
+                let current_position = pos.load(Ordering::Relaxed);
+
+                if current_position != last_position {
+                    last_position = current_position;
+                    position_secs.set(current_position as f32 / 1000.0);
+                }
+            }
+        }
+        /* let pos = ctx.playback_progress.read().clone();
         async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(50)).await;
                 position_secs.set(pos.load(Ordering::Relaxed) as f32 / 1000.0);
             }
-        }
+        } */
     });
 
     // Перерисовка canvas при изменении пиков, позиции или зума
@@ -491,6 +508,23 @@ pub fn WaveformBinsCanvas(
                 "reset": do_reset
             }));
         });
+    });
+
+    // Clean up waveform animation resources on drop
+    use_drop(|| {
+        let _ = dioxus::document::eval(
+            r#"
+            if (window.waveformAnimId !== null) {
+                cancelAnimationFrame(window.waveformAnimId);
+                window.waveformAnimId = null;
+            }
+
+            window.waveViewportPctAtTime = undefined;
+            window.waveTimeAtViewportPct = undefined;
+            window.zoomAt = undefined;
+            window.updateWaveViewportVariables = undefined;
+            "#,
+        );
     });
 
     rsx! {

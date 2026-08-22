@@ -1,3 +1,4 @@
+pub mod changelog;
 pub mod favorites;
 pub mod home;
 pub mod privacy;

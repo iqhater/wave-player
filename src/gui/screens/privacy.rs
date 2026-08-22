@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-const STYLES_CSS: Asset = asset!("/src/gui/screens/terms.css");
+const STYLES_CSS: Asset = asset!("/src/gui/screens/markdown_styles.css");
 
 #[component]
 pub fn PrivacyPolicy() -> Element {

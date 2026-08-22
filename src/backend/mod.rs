@@ -1,9 +1,9 @@
-// pub mod bpm_key;
-mod decoder;
-pub mod engine;
-mod filters;
-// mod generate_waveform;
 pub mod analysis;
+mod commands;
+mod decoder;
+pub mod engine_v2;
+mod filters;
 pub mod metadata;
 mod spatial;
+mod state;
 pub mod store;

@@ -5,6 +5,7 @@ use super::components::{
     errors_toast::ErrorsToast, footer::Footer, player_controls::PlayerControls, sidebar::Sidebar,
     theme_toggle::ThemeToggle,
 };
+// use super::screens::home::Home;
 use super::theme::{Theme, use_theme, use_theme_provider};
 use crate::PlayerContext;
 use crate::shared::event_types::StoreEvent;
@@ -25,7 +26,10 @@ static MATERIAL_SYMBOLS_OUTLINED: Asset =
 pub fn RootLayout() -> Element {
     let ctx = use_context::<PlayerContext>();
     let route = use_route::<Route>();
-    let hide_controls = matches!(route, Route::TermsOfService | Route::PrivacyPolicy);
+    let hide_controls = matches!(
+        route,
+        Route::TermsOfService | Route::PrivacyPolicy | Route::Changelog
+    );
 
     // 1. СРАЗУ читаем сохраненную тему из конфига при старте приложения
     let saved_theme = Theme::from_pref(ctx.config.read().theme.clone());
@@ -38,6 +42,14 @@ pub fn RootLayout() -> Element {
     } else {
         "bg-surface text-on-surface"
     };
+
+    /* let is_home_route = matches!(route, Route::Home);
+
+    let home_view_class = if is_home_route {
+        "w-full max-w-[600px] flex flex-col items-center gap-8"
+    } else {
+        "hidden"
+    }; */
 
     // Слушаем рантайм-обновления от бэкенда
     use_future(move || {

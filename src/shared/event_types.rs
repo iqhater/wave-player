@@ -19,7 +19,9 @@ pub enum PlayerEvent {
     Resumed,
     Finished,
 
-    // VolumeChanged, ??
+    /* VolumeChanged {
+        volume: f32,
+    }, */
     TrackLoaded,
 
     // Loop audio
@@ -45,6 +47,13 @@ pub enum PlayerEvent {
         key_name: String,
         key_numerical: String,
     },
+
+    // Get LUFS
+    LoudnessMeasured {
+        momentary_lufs: Option<f32>,
+        shortterm_lufs: Option<f32>,
+        integrated_lufs: Option<f32>,
+    },
 }
 pub type StatusSender = BroadcastSender<PlayerEvent>;
 // pub type StatusReceiver = BroadcastReceiver<PlayerEvent>;
@@ -60,6 +69,7 @@ pub enum AudioError {
     UnsupportedFormat, // Пытаются открыть условный .txt или защищенный DRM файл
     SeekFailed,        // Если перемотка для источника не поддерживается
     FileCorrupted,     // Файл поврежден, декодер застрял на битых байтах
+    RenderAudioFailed, // Ошибка экспорта рендера петли
 
     // 🔌 Проблемы с железом (Аудио-карта/Наушники)
     DeviceInitializationFailed, // На ПК нет звуковой карты или она заблокирована другой программой
@@ -78,7 +88,7 @@ pub enum StoreEvent {
         tracks: Vec<Track>,
     },
     // Favorites changed event
-    FavoriteChanged {
+    FavoritesChanged {
         path: PathBuf,
         is_favorite: bool,
     },

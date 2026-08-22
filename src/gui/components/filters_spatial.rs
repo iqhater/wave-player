@@ -9,9 +9,9 @@ pub fn FiltersAndSpatial() -> Element {
     let ctx = use_context::<PlayerContext>();
 
     let mut show_menu_popup = use_signal(|| false);
-    let mut ms_mode = use_signal(|| "none".to_string()); // Signal<String> ("none", "mid", "side")
-    let stereo_width = use_signal(|| 1.0); // Signal<f32>, диапазон 0.0 .. 2.0 (дефолт 1.0)
-    let pan = use_signal(|| 0.0 as f32); // Signal<f32>, диапазон -1.0 .. 1.0 (дефолт 0.0)
+    let mut ms_mode = use_signal(|| "none".to_string()); //TODO: enum Signal<String> ("none", "mid", "side")
+    let stereo_width = use_signal(|| ctx.config.read().audio.stereo_width); // Signal<f32>, диапазон 0.0 .. 2.0 (дефолт 1.0)
+    let pan = use_signal(|| ctx.config.read().audio.pan); // Signal<f32>, диапазон -1.0 .. 1.0 (дефолт 0.0)
     let lp_cutoff = use_signal(|| 20000.0f32); // Signal<f32>, диапазон 20.0 .. 20000.0
     let hp_cutoff = use_signal(|| 20.0f32); // Signal<f32>, диапазон 20.0 .. 20000.0
     let mut lp_enabled = use_signal(|| false); // Signal<bool>

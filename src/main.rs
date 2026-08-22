@@ -7,15 +7,13 @@ mod shared;
 
 use crate::gui::route::Route;
 use async_broadcast::{Receiver as BroadcastReceiver, broadcast};
-use backend::engine::run_audio_loop;
-use std::path::PathBuf;
+use backend::engine_v2::run_audio_loop_v2;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
 use backend::store::config::ConfigStore;
 use shared::store_types::AppConfig;
 
-use crate::gui::theme::{Theme, use_theme, use_theme_provider};
 use backend::store::run::run_store_loop;
 use shared::command_types::PlayerCommand;
 use shared::command_types::StoreCommand;
@@ -24,7 +22,6 @@ use shared::event_types::{AudioError, PlayerEvent, StoreEvent};
 use dioxus::desktop::tao::dpi::{LogicalSize, PhysicalPosition, Position};
 use dioxus::desktop::tao::window::WindowBuilder;
 use dioxus::prelude::*;
-use futures_util::StreamExt;
 use generational_box::*;
 
 // fix of FOUC — Flash of Unstyled Content
@@ -89,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     status_tx.set_overflow(true);
     error_tx.set_overflow(true);
 
-    run_audio_loop(cmd_rx, playback_progress.clone(), status_tx, error_tx).unwrap();
+    run_audio_loop_v2(cmd_rx, playback_progress.clone(), status_tx, error_tx).unwrap();
 
     let owner = SyncStorage::owner();
 

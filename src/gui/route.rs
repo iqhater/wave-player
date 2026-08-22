@@ -2,8 +2,8 @@ use dioxus::prelude::*;
 
 use super::layout::RootLayout;
 use super::screens::{
-    favorites::Favorites, home::Home, privacy::PrivacyPolicy, recent_tracks::RecentTracks,
-    settings::Settings, terms::TermsOfService,
+    changelog::Changelog, favorites::Favorites, home::Home, privacy::PrivacyPolicy,
+    recent_tracks::RecentTracks, settings::Settings, terms::TermsOfService,
 };
 
 #[derive(Clone, Debug, PartialEq, Routable)]
@@ -29,4 +29,7 @@ pub enum Route {
 
         #[route("/privacy")]
         PrivacyPolicy,
+
+        #[route("/changelog")]
+        Changelog,
 }

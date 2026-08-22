@@ -1,5 +1,6 @@
 use crate::PlayerContext;
 use crate::shared::event_types::PlayerEvent;
+// use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
@@ -244,6 +245,20 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
             }));
         });
     });
+
+    // Clean up beat grid animation resources on drop
+    /* use_drop(|| {
+        let _ = dioxus::document::eval(
+            r#"
+            if (window.beatGridAnimId !== null) {
+                cancelAnimationFrame(window.beatGridAnimId);
+                window.beatGridAnimId = null;
+            }
+
+            window.drawBeatGrid = undefined;
+            "#,
+        );
+    }); */
 
     rsx! {
         canvas {

@@ -13,7 +13,9 @@ pub fn PlayerControls() -> Element {
     let mut position = use_signal(|| 0.0);
     let mut duration = use_signal(|| Duration::from_secs(0));
     let mut is_playing = use_signal(|| false);
-    let mut repeat_enabled = use_signal(|| false);
+    let mut repeat_enabled = use_signal(|| ctx.config.read().audio.repeat_track);
+    let mut shuffle_enabled = use_signal(|| false);
+    let mut favorite_enabled = use_signal(|| false);
 
     // Слушаем статусы
     use_future(move || {
@@ -72,8 +74,23 @@ pub fn PlayerControls() -> Element {
                             repeat_enabled.set(is_track_repeated);
                         }
                     }}
-                ControlIconButton { icon: "shuffle", title: "shuffle tracks" }
-                ControlIconButton { icon: "favorite", title: "add to favorites" }
+                ControlIconButton { icon: if shuffle_enabled() { "shuffle_on" } else { "shuffle" },
+                    title: "shuffle tracks",
+                    active: shuffle_enabled(),
+                    click_handler: {
+                        move |_| {
+                            shuffle_enabled.set(!shuffle_enabled());
+                        }
+                    }
+                }
+                ControlIconButton { icon: "favorite", title: "add to favorites",
+                    active: favorite_enabled(),
+                    click_handler: {
+                        move |_| {
+                            favorite_enabled.set(!favorite_enabled());
+                        }
+                    }
+                }
             }
 
             div { class: "h-6 w-[1px] bg-outline-variant opacity-50" }
@@ -120,6 +137,7 @@ pub fn PlayerControls() -> Element {
                 SpeedControl {}
                 FiltersAndSpatial {}
                 VolumeControl {}
+                // LUFS {}
             }
         }
     }
@@ -143,7 +161,10 @@ pub fn ControlIconButton(
             },
             title: "{title}",
             onclick: move |e| click_handler.call(e),
-            span { class: "material-symbols-outlined text-[20px]", "{icon}" }
+            span { class: "material-symbols-outlined text-[20px]",
+                  style: if is_active {"font-variation-settings: 'FILL' 1;"} else {"font-variation-settings: 'FILL' 0;"},
+                  "{icon}"
+            }
         }
     }
 }
@@ -151,9 +172,10 @@ pub fn ControlIconButton(
 #[component]
 fn SpeedControl() -> Element {
     let ctx = use_context::<PlayerContext>();
-    let mut speed = use_signal(|| 1.0);
+    let mut speed = use_signal(|| ctx.config.read().audio.speed as f32);
+    let mut is_preserve_pitch = use_signal(|| ctx.config.read().audio.preserve_pitch);
+
     let mut show_speed_popup = use_signal(|| false);
-    let mut is_preserve_pitch = use_signal(|| false);
 
     let speeds = [
         "0.25x", "0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "1.75x", "2.0x",
@@ -212,7 +234,7 @@ fn SpeedControl() -> Element {
                                                 let toggle_preserve_pitch = !is_preserve_pitch();
                                                 is_preserve_pitch.set(toggle_preserve_pitch);
                                                 // TODO: bad work at enigne. need refactor
-                                                // let _ = ctx.command_tx.read().send(PlayerCommand::SetPreservePitch(toggle_preserve_pitch));
+                                                let _ = ctx.command_tx.read().send(PlayerCommand::SetPreservePitch(toggle_preserve_pitch));
                                             }
                                         }
                                     },
@@ -265,7 +287,8 @@ fn SpeedControl() -> Element {
 #[component]
 fn VolumeControl() -> Element {
     let ctx = use_context::<PlayerContext>();
-    let mut volume = use_signal(|| 0.3 as f32);
+
+    let mut volume = use_signal(|| ctx.config.read().audio.volume as f32);
 
     rsx! {
         div { class: "relative group/volume",
@@ -308,5 +331,46 @@ fn VolumeControl() -> Element {
                 span { class: "text-label-sm font-bold text-secondary w-10 text-right whitespace-nowrap", "{(volume*100.0):.0}%" }
             }
         }
+    }
+}
+
+#[component]
+fn LUFS() -> Element {
+    let ctx = use_context::<PlayerContext>();
+    let mut lufs = use_signal(|| None::<f32>);
+
+    use_future(move || {
+        let mut status_rx = ctx.status_rx.read().clone();
+
+        async move {
+            while let Some(event) = status_rx.next().await {
+                match event {
+                    PlayerEvent::Started { .. } => {
+                        lufs.set(None);
+                    }
+
+                    PlayerEvent::LoudnessMeasured {
+                        momentary_lufs,
+                        shortterm_lufs,
+                        integrated_lufs: _,
+                    } => {
+                        lufs.set(shortterm_lufs.or(momentary_lufs));
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+    });
+
+    rsx! {
+        span {
+            class: "text-label-sm font-bold text-secondary whitespace-nowrap",
+            match lufs() {
+                Some(value) => format!("{value:.1} LUFS"),
+                None => "— LUFS".to_string(),
+            }
+        }
+
     }
 }

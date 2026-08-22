@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use super::cache::CacheStore;
 use super::config::ConfigStore;
 use super::db::DbStore;
+use crate::backend::store::dispatch;
 use crate::shared::store_types::AppConfig;
 
 /// Отдельный поток: независимо пишет в db/cache/config и шлёт события в UI.
@@ -24,34 +25,9 @@ pub fn run_store_loop(
             config: app_config.load(),
         });
 
-        while let Ok(cmd) = store_rx.recv() {
-            match cmd {
-                StoreCommand::SaveTrackPlaysCount { path } => {
-                    db.increment_play_count(&path);
-                    // Послать обновлённый счётчик обратно
-                    if let Some(count) = db.play_count(&path) {
-                        let _ =
-                            store_tx.broadcast(StoreEvent::TrackPlaysCountUpdated { path, count });
-                    }
-                }
-                StoreCommand::UpdateTrackInfo {
-                    path,
-                    duration_secs,
-                } => {
-                    db.edit_track(&path, duration_secs);
-                }
-                StoreCommand::SetConfig(cfg) => {
-                    app_config.save(&cfg);
-                }
-                StoreCommand::RequestSnapshot => {
-                    let _ = store_tx.broadcast(StoreEvent::ConfigLoaded {
-                        config: app_config.load(),
-                    });
-                    let _ = store_tx.broadcast(StoreEvent::FavoritesLoaded {
-                        tracks: db.favorites(),
-                    });
-                }
-            }
+        while let Ok(command) = store_rx.recv() {
+            // run store commands
+            dispatch::dispatch(&mut db, &app_config, &store_tx, command);
         }
     });
     Ok(())

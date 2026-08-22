@@ -1,5 +1,6 @@
 use super::filters::LiveFilteredSource;
 use super::spatial::LiveSpatialSource;
+use super::state::AudioState;
 use crate::shared::event_types::AudioError;
 use rodio::Source;
 use std::fs::File;
@@ -11,7 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
-use rodio::{Player, decoder::DecoderBuilder};
+use rodio::{Decoder, Player, decoder::DecoderBuilder};
+use rodio_wsola::WsolaSourceExt;
 use std::fs;
 
 // ---------------------------------------------------------------------------
@@ -45,6 +47,7 @@ pub fn load_file_with_decoder(
         .build()
         .map_err(|_| AudioError::FileCorrupted)?;
 
+    // let decoder = decoder.repeat_infinite();
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
     let duration = decoder.total_duration().unwrap_or(Duration::from_secs(0));
@@ -56,6 +59,81 @@ pub fn load_file_with_decoder(
     player.append(spatial);
 
     Ok((duration, channels, sample_rate))
+}
+
+// V2
+pub(crate) fn open_file_with_decoder(path: &Path) -> Result<Decoder<BufReader<File>>, AudioError> {
+    let file = File::open(path)
+        .map_err(|_| AudioError::FileNotFound(path.to_string_lossy().into_owned()))?;
+
+    let len = fs::metadata(path)
+        .map_err(|_| AudioError::FileCorrupted)?
+        .len();
+
+    let decoder = DecoderBuilder::new()
+        .with_data(BufReader::new(file))
+        .with_byte_len(len)
+        .with_seekable(true)
+        .with_coarse_seek(true)
+        // .with_hint("mp3")
+        .build()
+        .map_err(|_| AudioError::FileCorrupted)?;
+
+    Ok(decoder)
+}
+
+// V2
+fn append_source<S>(state: &AudioState, source: S)
+where
+    S: Source + Send + 'static,
+{
+    let filtered = LiveFilteredSource::new(
+        source,
+        state.effects.low_pass.clone(),
+        state.effects.high_pass.clone(),
+    );
+
+    let spatial = LiveSpatialSource::new(
+        filtered,
+        state.effects.mid_side.clone(),
+        state.effects.stereo_width.clone(),
+        state.effects.pan.clone(),
+    );
+
+    state.player.append(spatial);
+    // state.player.set_speed(player_speed);
+}
+
+// V2
+pub(crate) fn build_audio_pipeline(
+    state: &AudioState,
+    mut decoder: Decoder<BufReader<File>>,
+    position: Duration,
+) -> Result<(), AudioError> {
+    // seek before wsola
+    decoder
+        .try_seek(position)
+        .map_err(|_| AudioError::SeekFailed)?;
+
+    let decoder = decoder.amplify_decibel(3.5);
+
+    if state.playback.preserve_pitch {
+        // Decoder → WSOLA → Filters → Spatial
+        // let wsola_source = rodio_wsola::Wsola::new(decoder, state.playback.speed);
+        let wsola_source = decoder.wsola(state.playback.speed);
+        append_source(state, wsola_source);
+
+        // WSOLA controls the playback rate.
+        state.player.set_speed(state.playback.speed);
+    } else {
+        // Decoder → Filters → Spatial
+        append_source(state, decoder);
+
+        // The player controls the playback rate.
+        state.player.set_speed(state.playback.speed);
+    }
+
+    Ok(())
 }
 
 /// Открывает файл, декодирует все сэмплы в память.
@@ -83,6 +161,9 @@ pub fn load_samples_mono(
     let duration = decoder.total_duration().unwrap_or(Duration::from_secs(0));
 
     let max_samples = sample_rate as usize * channels * limit_secs as usize;
+
+    // normalize
+    let decoder = decoder.amplify_decibel(3.5);
 
     // Collect all samples and mix to mono
     let mut mono_samples: Vec<f32> = Vec::new();
