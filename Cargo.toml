@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 rodio = { version = "0.22.1", features = ["symphonia-all"] } # main audio engine lib
 rodio-wsola = { version = "0.2.0" } # for pitch preserving with speed change
+timestretch = "0.13.0" # for pitch preserving with speed change
 hound = "3.5.1" # audio??
 math-iir-fir = "0.5.15" # biquad LP/HP filters
 dioxus = { version = "0.7.10", features = ["desktop", "router"] } # main ui framework
@@ -36,3 +37,11 @@ default = ["desktop"]
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
+
+# Optimize build for release
+[profile.release]
+opt-level = "z"     # Оптимизация по размеру кода (вместо "3" для скорости)
+lto = true          # Link Time Optimization (удаляет неиспользуемый код из зависимостей)
+codegen-units = 1   # Улучшает работу LTO и сжатие
+panic = "abort"     # Удаляет тяжелую инфраструктуру для отлова паник
+strip = false        # Автоматически удаляет отладочную информацию (символы) из файлов
