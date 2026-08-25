@@ -273,6 +273,21 @@ fn AudioKnob(
         ""
     };
 
+    // colorize knobs circle bars
+    let tick_count = 21;
+    let active_ticks = ((percent * tick_count as f32).round() as usize).min(tick_count);
+
+    let active_dasharray = if active_ticks == 0 {
+        "0 1000".to_string()
+    } else {
+        format!(
+            "{} 0 1000",
+            std::iter::repeat_n("0.4 3.6", active_ticks)
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+    };
+
     // Эффект увеличения scale-[1.03] полностью УДАЛЕН.
     // Теперь геометрия элемента при клике абсолютно статична.
     let knob_style_classes = if is_dragging() {
@@ -385,12 +400,35 @@ fn AudioKnob(
                     // 1. Внешнее кольцо с делениями.
                     // Вместо класса цвета теперь используется явный инлайновый stroke: "#d0d0d0".
                     // Это гарантирует мягкий, благородный светло-серый оттенок делений.
+                    // Серые оригинальные риски
                     path {
                         d: "M 7.6 32.4 A 17.5 17.5 0 1 1 32.4 32.4",
                         fill: "none",
                         stroke: "#d0d0d0",
                         stroke_width: "3.2",
                         stroke_dasharray: "0.4 3.6",
+                    }
+
+                    // Цветной бордер
+                    path {
+                        class: "text-primary",
+                        d: "M 7.6 32.4 A 17.5 17.5 0 1 1 32.4 32.4",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_opacity: "0.25",
+                        stroke_width: "4.4",
+                        stroke_dasharray: active_dasharray.clone(),
+                    }
+
+                    // Цветные активные риски
+                    path {
+                        class: "text-primary",
+                        d: "M 7.6 32.4 A 17.5 17.5 0 1 1 32.4 32.4",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_opacity: "0.55",
+                        stroke_width: "3.2",
+                        stroke_dasharray: active_dasharray.clone(),
                     }
 
                     // 2. Внутренний вращающийся диск
