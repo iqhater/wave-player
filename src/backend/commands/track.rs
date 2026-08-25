@@ -45,7 +45,8 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
     state.playback.playback_progress.store(0, Ordering::Relaxed);
 
     state.player.set_volume(state.playback.volume);
-    // state.player.set_speed(state.playback.speed);
+    // crate::backend::commands::playback::apply_playback_speed(state);
+
     state.player.play();
 
     let metadata = parse_track_metadata(path_ref);
