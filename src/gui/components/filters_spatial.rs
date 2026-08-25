@@ -34,6 +34,12 @@ pub fn FiltersAndSpatial() -> Element {
             } }
 
             if show_menu_popup() {
+                // close popup by outside click
+                div {
+                    class: "fixed inset-0 z-20",
+                    onclick: move |_| show_menu_popup.set(false),
+                }
+
                 div { class: "absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-30",
                     div { class: "neumorph-raised rounded-xl p-2 flex flex-col gap-1 min-w-[140px]",
                         onmouseenter: move |_| show_menu_popup.set(true),

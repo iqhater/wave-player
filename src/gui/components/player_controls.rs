@@ -191,6 +191,12 @@ fn SpeedControl() -> Element {
                 "{speed():.2}x"
             }
             if show_speed_popup() {
+                // close popup by outside click
+                div {
+                    class: "fixed inset-0 z-20",
+                    onclick: move |_| show_speed_popup.set(false),
+                }
+
                 div {
                     class: "absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-30",
 
@@ -198,7 +204,7 @@ fn SpeedControl() -> Element {
                         class: "neumorph-raised rounded-xl p-2 flex flex-col gap-1 min-w-[60px]",
 
                         onmouseenter: move |_| show_speed_popup.set(true),
-                        onmouseleave: move |_| show_speed_popup.set(false),
+                        // onmouseleave: move |_| show_speed_popup.set(false),
 
                         // Speed list and vertical slider
                         div {
