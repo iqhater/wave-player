@@ -22,6 +22,8 @@ pub fn Waveform() -> Element {
 
     // Read reactive state from context
     let mut position_secs = use_signal(|| 0.0);
+    let mut hover_position_secs = use_signal(|| None::<f32>);
+
     /* let mut position_secs = use_signal(move || {
         Duration::from_millis(init_playback.load(Ordering::Relaxed) as u64).as_secs_f32()
     }); */
@@ -204,6 +206,16 @@ pub fn Waveform() -> Element {
         }
     };
 
+    let hover_cursor_progress = hover_position_secs().map(|hover_position| {
+        if dur <= 0.0 || view_range <= 0.0 {
+            return 0.0;
+        }
+
+        let timeline_progress = (hover_position / dur) * 100.0;
+
+        ((timeline_progress - view_start) / view_range * 100.0).clamp(0.0, 100.0)
+    });
+
     rsx! {
         div { class: "w-full",
             tabindex: "0",
@@ -337,6 +349,35 @@ pub fn Waveform() -> Element {
                     }
                 },
 
+                // Timeline cursor hover
+                onmousemove: move |event| {
+                    let Some((_, width)) = container_rect() else {
+                        return;
+                    };
+
+                    if width <= 0.0 || dur <= 0.0 {
+                        return;
+                    }
+
+                    let x = event.element_coordinates().x as f32;
+                    let viewport_progress = (x / width).clamp(0.0, 1.0);
+
+                    // Convert mouse position inside the visible viewport
+                    // into the position on the complete track timeline.
+                    let timeline_progress =
+                        (view_start + viewport_progress * view_range).clamp(0.0, 100.0);
+
+                    let hover_position =
+                        (timeline_progress / 100.0) * dur;
+
+                    hover_position_secs.set(Some(hover_position));
+                },
+
+                onmouseleave: move |_| {
+                    hover_position_secs.set(None);
+                },
+
+
                 if has_track() {
 
                     // Waveform bars
@@ -360,6 +401,31 @@ pub fn Waveform() -> Element {
                         }
                     }
                 }
+
+                // Hover preview cursor
+                if let Some(hover_progress) = hover_cursor_progress {
+                    if let Some(hover_position) = hover_position_secs() {
+                        div {
+                            class: "absolute top-0 bottom-0 flex items-center justify-center z-24 pointer-events-none opacity-45",
+                            style: "left: {hover_progress}%; transform: translateX(-50%);",
+                            title: "Preview position",
+
+                            div {
+                                class: "w-[2px] h-full bg-primary shadow-[0_0_8px_rgba(84,98,83,0.5)]"
+                            }
+
+                            div {
+                                class: "absolute -top-0 w-2 h-2 rounded-full bg-primary"
+                            }
+
+                            div {
+                                class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-50",
+                                "{format_time(hover_position as u32)}"
+                            }
+                        }
+                    }
+                }
+
                 DragAndDropFile { is_dragover_event: is_dragover_event }
             }
 

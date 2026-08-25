@@ -1,7 +1,8 @@
 use crate::PlayerContext;
+use crate::PlayerEvent;
 use crate::shared::command_types::PlayerCommand;
 use dioxus::prelude::*;
-// use futures_util::StreamExt;
+use futures_util::StreamExt;
 use std::time::Duration;
 
 #[component]
@@ -43,6 +44,11 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
     let mut anchor_r = use_signal(|| 0.0f32);
     let mut is_loop_enabled = use_signal(|| false);
 
+    // Export signals
+    let mut export_started = use_signal(|| false);
+    let mut export_progress = use_signal(|| 0.0f32);
+    let mut exported_path = use_signal(|| None::<String>);
+
     // Контейнер 600px, родитель по центру — cl примерно 300px при 1200px экране
     // Но чтобы не гадать — просто читаем из onmounted один раз
     let mut cl = use_signal(|| 0.0f32);
@@ -65,23 +71,38 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
         ));
     };
 
-    // Слушаем статусы
-    /* use_future(move || {
+    use_future(move || {
         let mut status_rx = ctx.status_rx.read().clone();
+
         async move {
             while let Some(status) = status_rx.next().await {
                 match status {
-                    PlayerEvent::Started {
-                        duration: d,
-                        metadata: _,
-                    } => {
-                        duration.set(d);
+                    PlayerEvent::ExportStarted => {
+                        export_started.set(true);
+                        export_progress.set(0.05);
+                        exported_path.set(None);
                     }
-                    _ => {} // ignore other variants
+
+                    PlayerEvent::ExportProgress { progress } => {
+                        export_progress.set(progress);
+                    }
+
+                    PlayerEvent::ExportFinished { path } => {
+                        export_progress.set(1.0);
+                        exported_path.set(Some(path.to_string_lossy().into_owned()));
+                    }
+
+                    PlayerEvent::ExportFailed => {
+                        export_started.set(false);
+                        export_progress.set(0.0);
+                        exported_path.set(None);
+                    }
+
+                    _ => {}
                 }
             }
         }
-    }); */
+    });
 
     rsx! {
         div {
@@ -223,25 +244,37 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     anchor_r.set(loop_end());
                 },
 
-                // Кнопка export
-                div { class: "absolute top-0 right-8 cursor-pointer material-symbols-outlined text-primary",
-                    style: "font-size: 20px; cursor: not-allowed;",
+                // Кнопка export cursor: not-allowed;
+                div { //class: "absolute top-0 right-8 cursor-pointer material-symbols-outlined text-primary",
+                    class: "absolute top-0 right-8 rounded-xl cursor-pointer hover:bg-secondary-container hover:scale-105 material-symbols-outlined text-primary",
+                    style: "font-size: 20px;",
                     title: "Export audio loop",
                     // Не даём клику по кнопке запускать захват региона
                     onmousedown: move |e| e.stop_propagation(),
-                    onclick: move |_| {},
-                    span { "save_as" }
+                    onclick: move |_| {
+                        if !export_started() {
+                            let _ = ctx.command_tx.read().send(
+                                PlayerCommand::ExportLoop(
+                                    "exported_loop.wav".to_string(),
+                                ),
+                            );
+                        }
+                    },
+                    span {
+                        class: if export_started() {
+                            "animate-pulse text-primary"
+                        } else {
+                            "text-primary"
+                        },
+
+                        if export_started() {
+                            "progress_activity"
+                        } else {
+                            "save_as"
+                        }
+                    }
                 }
 
-                // Кнопка toggle loop
-                /* div { class: "absolute top-0 right-1 cursor-pointer material-symbols-outlined text-primary text-[22px]",
-                    onclick: move |_| {
-                        let new_val = !is_loop_enabled();
-                        is_loop_enabled.set(new_val);
-                        let _ = ctx.command_tx.read().send(PlayerCommand::ToggleLoop(new_val));
-                    },
-                    span { if is_loop_enabled() { "repeat_on" } else { "laps" } }
-                } */
                 // Toggle loop icon
                 div { class: if is_loop_enabled() {
                         "absolute top-0 right-1 hover:bg-secondary-container rounded-xl cursor-pointer hover:scale-105 material-symbols-outlined bg-primary"
@@ -267,6 +300,110 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                         "laps"
                     }
                 }
+
+                // Progress pop-up
+                if export_started() {
+                    // Backdrop
+                    div {
+                        class: "pointer-events-auto cursor-default fixed inset-0 z-50 bg-black/30 backdrop-blur-sm",
+                    }
+
+                     // Progress modal
+                    div {
+                        class: "pointer-events-auto cursor-default fixed p-5 top-1/2 left-[60%] z-60 w-[420px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-outline-variant bg-surface-container-high shadow-2xl",
+                        onmousedown: move |evt| {
+                            evt.stop_propagation();
+                        },
+
+                        div {
+                            class: "flex items-center justify-between gap-3",
+
+                            div {
+                                class: "flex items-center gap-2",
+
+                                span {
+                                    class: "material-symbols-outlined text-primary",
+                                    if exported_path().is_some() {
+                                        "check_circle"
+                                    } else {
+                                        "progress_activity"
+                                    }
+                                }
+
+                                div {
+                                    class: "text-sm font-medium",
+
+                                    if exported_path().is_some() {
+                                        "Export complete"
+                                    } else {
+                                        "Exporting loop..."
+                                    }
+                                }
+                            }
+
+                            button {
+                                class: "flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface cursor-pointer",
+                                title: "Close",
+
+                                onclick: move |evt| {
+                                    evt.stop_propagation();
+
+                                    export_started.set(false);
+                                    export_progress.set(0.0);
+                                    exported_path.set(None);
+                                },
+
+                                span {
+                                    class: "material-symbols-outlined text-[18px]",
+                                    "close"
+                                }
+                            }
+                        }
+
+                        div {
+                            class: "mt-3 h-2 overflow-hidden rounded-full bg-surface-variant",
+
+                            div {
+                                class: "h-full rounded-full bg-primary transition-all duration-300",
+                                style: "width: {export_progress() * 100.0}%;",
+                            }
+                        }
+
+                        div {
+                            class: "mt-2 w-full max-w-full overflow-hidden break-all whitespace-normal text-xs leading-5 text-on-surface-variant",
+
+                            if let Some(path) = exported_path() {
+                                "{path}"
+                            } else {
+                                "{(export_progress() * 100.0) as u32}%"
+                            }
+                        }
+
+                        if let Some(path) = exported_path() {
+                            div {
+                                class: "mt-3 flex justify-end",
+
+                                button {
+                                    class: "flex items-center shrink-0 gap-2 rounded-xl bg-primary px-3 py-2 text-sm text-on-primary hover:brightness-110 cursor-pointer",
+
+                                    onclick: move |evt| {
+                                        evt.stop_propagation();
+
+                                        open_file_location(path.clone());
+                                    },
+
+                                    span {
+                                        class: "material-symbols-outlined text-[18px]",
+                                        "folder_open"
+                                    }
+
+                                    "Open folder"
+                                }
+                            }
+                        }
+                    }
+                }
+
             }
 
             // Левый маркер
@@ -314,4 +451,33 @@ fn format_time(secs: u32) -> String {
     let m = secs / 60;
     let s = secs % 60;
     format!("{:02}:{:02}", m, s)
+}
+
+#[cfg(target_os = "windows")]
+fn open_file_location(path: String) {
+    let path = std::path::PathBuf::from(path);
+
+    let Some(path) = path.to_str() else {
+        return;
+    };
+
+    let _ = std::process::Command::new("explorer")
+        .arg(format!("/select,{path}"))
+        .spawn();
+}
+
+#[cfg(target_os = "macos")]
+fn open_file_location(path: String) {
+    let _ = std::process::Command::new("open")
+        .args(["-R", &path])
+        .spawn();
+}
+
+#[cfg(target_os = "linux")]
+fn open_file_location(path: String) {
+    let path = std::path::PathBuf::from(path);
+
+    if let Some(parent) = path.parent() {
+        let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+    }
 }

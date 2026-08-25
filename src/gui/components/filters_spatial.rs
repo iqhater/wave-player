@@ -3,6 +3,7 @@ use crate::PlayerContext;
 use crate::gui::screens::settings::SettingsCheckbox;
 use crate::shared::command_types::PlayerCommand;
 use dioxus::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[component]
 pub fn FiltersAndSpatial() -> Element {
@@ -89,6 +90,7 @@ pub fn FiltersAndSpatial() -> Element {
                                 AudioKnob {
                                     label: "Stereo Width".to_string(),
                                     value: stereo_width,
+                                    default_value: 1.0,
                                     min: 0.0, max: 2.0, step: 0.1,
                                     display_value: format!("{:.1}x", stereo_width()),
                                     disabled: false,
@@ -104,6 +106,7 @@ pub fn FiltersAndSpatial() -> Element {
                                 AudioKnob {
                                     label: "Pan (L/R)".to_string(),
                                     value: pan,
+                                    default_value: 0.0,
                                     min: -1.0, max: 1.0, step: 0.05,
                                     display_value: pan_text.as_str(),
                                     disabled: false,
@@ -147,6 +150,7 @@ pub fn FiltersAndSpatial() -> Element {
                                         AudioKnob {
                                             label: "LP".to_string(),
                                             value: lp_cutoff,
+                                            default_value: 20000.0,
                                             min: 5.0,
                                             max: 20000.0,
                                             step: 10.0,
@@ -186,6 +190,7 @@ pub fn FiltersAndSpatial() -> Element {
                                         AudioKnob {
                                             label: "HP".to_string(),
                                             value: hp_cutoff,
+                                            default_value: 20.0,
                                             min: 20.0,
                                             max: 20500.0,
                                             step: 10.0,
@@ -216,12 +221,16 @@ pub fn FiltersAndSpatial() -> Element {
     }
 }
 
+// Глобальный потокобезопасный счетчик для генерации уникальных ID ручек
+static KNOB_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 /// Вспомогательный компонент поворотной ручки (Audio Knob).
 /// Реализует крутилку через SVG с обработкой перетаскивания мыши.
 #[component]
 fn AudioKnob(
     label: String,
     value: Signal<f32>,
+    default_value: f32,
     min: f32,
     max: f32,
     step: f32,
@@ -235,6 +244,14 @@ fn AudioKnob(
     let mut is_dragging = use_signal(|| false);
     let mut start_y = use_signal(|| 0.0f32);
     let mut start_val = use_signal(|| 0.0f32);
+
+    // Уникальный ID для нашей ручки
+    // use_hook гарантирует, что ID сгенерируется ОДИН раз при создании компонента
+    // и сохранится между перерендерами
+    let knob_id = use_signal(|| -> String {
+        let id = KNOB_COUNTER.fetch_add(1, Ordering::Relaxed);
+        format!("audio-knob-{}", id)
+    });
 
     // Нормализованная позиция 0..1: линейная или логарифмическая.
     let percent = if is_logarithmic {
@@ -259,44 +276,6 @@ fn AudioKnob(
     };
 
     rsx! {
-        if is_dragging() {
-
-            // Overlay for convenience mouse dragging
-            div {
-                class: "fixed inset-0 z-50 cursor-ns-resize bg-transparent select-none",
-                style: "-webkit-tap-highlight-color: transparent;",
-                onpointermove: move |e| {
-                    if is_dragging() {
-                        let delta_y = (start_y() - e.screen_coordinates().y as f32) as f32;
-                        let next = if is_logarithmic {
-                            // Лог-шкала: одинаковый угол ручки = одинаковый диапазон на слух.
-                            let ln_min = min.ln();
-                            let range = (max / min).ln();
-                            let start_t = (start_val().ln() - ln_min) / range;
-                            let t = (start_t + delta_y / 150.0).clamp(0.0, 1.0);
-                            (ln_min + t * range).exp().clamp(min, max)
-                        } else {
-                            // Линейная шкала (например, для Pan).
-                            let raw = start_val() + (delta_y / 150.0) * (max - min);
-                            let stepped = (raw / step).round() * step;
-                            stepped.clamp(min, max)
-                        };
-
-                        // Не дублируем и не шлём, если значение не изменилось
-                        if next != value() {
-                            value.set(next);
-                            if let Some(cb) = &on_value_change {
-                                cb.call(next);
-                            }
-                        }
-                    }
-                },
-                onpointerup: move |_| is_dragging.set(false),
-                onpointercancel: move |_| is_dragging.set(false),
-                // onmouseleave: move |_| is_dragging.set(false),
-            }
-        }
-
         div {
             class: "flex flex-col items-center gap-1.5 flex-1 min-w-[70px] select-none transition-opacity duration-150 {opacity_class}",
 
@@ -304,6 +283,8 @@ fn AudioKnob(
 
             // Корпус крутилки
             div {
+                // Присваиваем ID, чтобы найти элемент из JS
+                id: knob_id(),
                 class: "relative w-12 h-12 rounded-full border flex items-center justify-center cursor-ns-resize transition-all duration-150 shadow-sm focus:outline-none focus:ring-0 active:bg-transparent select-none {knob_style_classes}",
                 style: "-webkit-tap-highlight-color: transparent; touch-action: none;",
 
@@ -311,23 +292,85 @@ fn AudioKnob(
                     is_dragging.set(true);
                     start_y.set(e.screen_coordinates().y as f32);
                     start_val.set(value());
+
+                    let p_id = e.pointer_id();
+                    let knob_id = knob_id();
+
+                    // Кроссплатформенный вызов JS кода через eval
+                    let js_code = format!(
+                        "const el = document.getElementById('{knob_id}'); \
+                         if (el) el.setPointerCapture({p_id});"
+                    );
+                    let _ = document::eval(&js_code);
                 },
 
-                /* onmousedown: move |e| {
-                    is_dragging.set(true);
-                    start_y.set(e.screen_coordinates().y as f32);
-                    start_val.set(value());
-                }, */
-
-                // TODO:
-                /* ondoubleclick: move |_| {
-                    println!("Double clicked!");
-                    is_dragging.set(false);
-                    value.set(0.0);
-                    if let Some(cb) = &on_value_change {
-                        cb.call(0.0);
+                onpointermove: move |e| {
+                    if !is_dragging() {
+                        return;
                     }
-                }, */
+                    let delta_y = (start_y() - e.screen_coordinates().y as f32) as f32;
+                    let next = if is_logarithmic {
+                        // Лог-шкала: одинаковый угол ручки = одинаковый диапазон на слух.
+                        let ln_min = min.ln();
+                        let range = (max / min).ln();
+                        let start_t = (start_val().ln() - ln_min) / range;
+                        let t = (start_t + delta_y / 150.0).clamp(0.0, 1.0);
+                        (ln_min + t * range).exp().clamp(min, max)
+                    } else {
+                        // Линейная шкала (например, для Pan).
+                        let raw = start_val() + (delta_y / 150.0) * (max - min);
+                        let stepped = (raw / step).round() * step;
+                        stepped.clamp(min, max)
+                    };
+
+                    // Не дублируем и не шлём, если значение не изменилось
+                    if next != value() {
+                        value.set(next);
+                        if let Some(cb) = &on_value_change {
+                            cb.call(next);
+                        }
+                    }
+                },
+                onpointerup: move |evt| {
+                    // if !is_dragging() { return; }
+                    is_dragging.set(false);
+                    let knob_id = knob_id();
+
+                    let p_id = evt.pointer_id();
+                    let js_code = format!(
+                        "const el = document.getElementById('{knob_id}'); \
+                         if (el) el.releasePointerCapture({p_id});"
+                    );
+                    let _ = document::eval(&js_code);
+                },
+                onpointerleave: move |evt| {
+                    is_dragging.set(false);
+                },
+                onpointercancel: move |evt| {
+                    // if !is_dragging() { return; }
+                    is_dragging.set(false);
+                    let knob_id = knob_id();
+
+                    let p_id = evt.pointer_id();
+                    let js_code = format!(
+                        "const el = document.getElementById('{knob_id}'); \
+                         if (el) el.releasePointerCapture({p_id});"
+                    );
+                    let _ = document::eval(&js_code);
+                },
+
+                onclick: move |e| {
+                    is_dragging.set(false);
+                },
+
+                // DONE
+                ondoubleclick: move |_| {
+                    is_dragging.set(false);
+                    value.set(default_value);
+                    if let Some(cb) = &on_value_change {
+                        cb.call(default_value);
+                    }
+                },
 
                 svg {
                     class: "w-11 h-11 relative overflow-visible pointer-events-none select-none",

@@ -62,7 +62,7 @@ pub fn PlayerControls() -> Element {
     }); */
 
     rsx! {
-        section { class: "mt-8 px-6 py-4 neumorph-raised rounded-full flex items-center gap-6 hover:shadow",
+        section { class: "mt-18 px-6 py-4 neumorph-raised rounded-full flex items-center gap-6 hover:shadow",
             div { class: "flex items-center gap-4",
                 ControlIconButton { icon: if repeat_enabled() { "repeat_one" } else { "repeat" },
                     title: "repeat track",
@@ -184,102 +184,172 @@ fn SpeedControl() -> Element {
 
     rsx! {
         div { class: "relative",
-            button { class: "px-2 py-1 rounded-md text-label-md font-bold text-secondary hover:bg-surface-container cursor-pointer hover:text-primary transition-colors",
+            button { class: "w-16 px-2 py-1 rounded-md text-label-md font-bold text-secondary hover:bg-surface-container cursor-pointer hover:text-primary transition-colors",
                 title: "Change track speed",
                 onclick: move |_| show_speed_popup.set(!show_speed_popup()),
                 // onmouseenter: move |_| show_speed_popup.set(true),
                 "{speed():.2}x"
             }
             if show_speed_popup() {
-                div { class: "absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-30",
-                    div { class: "neumorph-raised rounded-xl p-2 flex flex-col gap-1 min-w-[60px]",
+                div {
+                    class: "absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-30",
+
+                    div {
+                        class: "neumorph-raised rounded-xl p-2 flex flex-col gap-1 min-w-[60px]",
+
                         onmouseenter: move |_| show_speed_popup.set(true),
                         onmouseleave: move |_| show_speed_popup.set(false),
-                        {speeds.iter().enumerate().map(|(i, label)| {
-                            let val = speed_vals[i];
-                            let active = (speed() - val as f32).abs() < 0.01;
-                            rsx! {
-                                button {
-                                    class: if active {
-                                        "px-2 py-1 rounded-md text-label-sm bg-primary/10 text-primary cursor-pointer font-bold"
-                                    } else {
-                                        "px-2 py-1 rounded-md text-label-sm hover:bg-primary/10 hover:text-primary cursor-pointer text-secondary transition-colors"
-                                    },
-                                    onclick:  {
-                                        move |_| {
-                                            let _ = ctx.command_tx.read().send(PlayerCommand::SetSpeed(val));
-                                            speed.set(val);
-                                            show_speed_popup.set(false);
+
+                        // Speed list and vertical slider
+                        div {
+                            class: "flex flex-row items-stretch gap-2",
+
+                            // Original speed list
+                            div {
+                                class: "flex flex-col gap-1 min-w-[60px]",
+
+                                {speeds.iter().enumerate().map(|(i, label)| {
+                                    let val = speed_vals[i];
+                                    let active = (speed() - val as f32).abs() < 0.01;
+
+                                    rsx! {
+                                        button {
+                                            class: if active {
+                                                "px-2 py-1 rounded-md text-label-sm bg-primary/10 text-primary cursor-pointer font-bold"
+                                            } else {
+                                                "px-2 py-1 rounded-md text-label-sm hover:bg-primary/10 hover:text-primary cursor-pointer text-secondary transition-colors"
+                                            },
+
+                                            onclick: move |_| {
+                                                if ctx
+                                                    .command_tx
+                                                    .read()
+                                                    .send(PlayerCommand::SetSpeed(val))
+                                                    .is_ok()
+                                                {
+                                                    speed.set(val);
+                                                    show_speed_popup.set(false);
+                                                }
+                                            },
+
+                                            "{label}"
                                         }
-                                    },
-                                    "{label}"
+                                    }
+                                })}
+                            }
+
+                            // Vertical slider aligned to the full speed list height
+                            div {
+                                class: "relative flex w-6 self-stretch shrink-0 items-center justify-center border-l border-outline-variant/50",
+
+                                input {
+                                    r#type: "range",
+                                    min: "0.25",
+                                    max: "2.0",
+                                    step: "0.01",
+                                    value: "{speed()}",
+                                    title: "Speed: {speed():.2}x",
+
+                                    class: "absolute left-1/2 top-1/2 h-2 shrink-0 cursor-pointer accent-primary",
+
+                                    // The slider height follows the speed list.
+                                    style: "left: calc(50% + 2px); width: 280px; transform: translate(-50%, -50%) rotate(90deg); transform-origin: center;",
+
+                                    oninput: move |event| {
+                                        let Ok(value) = event.value().parse::<f32>() else {
+                                            return;
+                                        };
+
+                                        let value = value.clamp(0.25, 2.0);
+
+                                        if ctx
+                                            .command_tx
+                                            .read()
+                                            .send(PlayerCommand::SetSpeed(value))
+                                            .is_ok()
+                                        {
+                                            speed.set(value);
+                                        }
+                                    }
                                 }
                             }
-                        })}
-                        // Разделитель
-                        div { class: "w-full h-[1px] bg-outline-variant/50 my-1" }
-                        // Кнопка Preserve Pitch
-                        {
-                            rsx! {
-                                label {
-                                    // whitespace-nowrap не даст тексту переноситься на вторую строку
-                                    class: "px-2 py-1.5 rounded-md text-[12px] text-label-sm flex items-center gap-2.5 hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors w-full select-none whitespace-nowrap",
 
-                                    input {
-                                        r#type: "checkbox",
-                                        class: "sr-only",
-                                        checked: is_preserve_pitch(),
-                                        onchange: {
-                                            move |_| {
-                                                let toggle_preserve_pitch = !is_preserve_pitch();
-                                                is_preserve_pitch.set(toggle_preserve_pitch);
-                                                // TODO: bad work at enigne. need refactor
-                                                let _ = ctx.command_tx.read().send(PlayerCommand::SetPreservePitch(toggle_preserve_pitch));
-                                            }
-                                        }
-                                    },
+                        }
 
-                                    // Компактный контейнер под иконку (увеличили до w-4 h-4 для лучшего баланса)
-                                    div {
-                                        class: format!(
-                                            "w-4 h-4 border rounded-md flex items-center justify-center transition-all duration-150 shrink-0 {}",
-                                            if is_preserve_pitch() {
-                                                "bg-primary border-primary text-white"
-                                            } else {
-                                                "border-neutral-300 bg-transparent" // серый контур в неактивном состоянии
-                                            }
-                                        ),
+                        // Original separator
+                        div {
+                            class: "w-full h-[1px] bg-outline-variant/50 my-1",
+                        }
 
-                                        // Вместо проблемного шрифта рендерим идеальный SVG, который виден ТОЛЬКО при активности
-                                        if is_preserve_pitch() {
-                                            svg {
-                                                class: "w-2.5 h-2.5 stroke-current", // цвет подстроится под text-white автоматом
-                                                fill: "none",
-                                                view_box: "0 0 24 24",
-                                                stroke_width: "3", // толщина галочки
-                                                stroke_linecap: "round",
-                                                stroke_linejoin: "round",
-                                                path { d: "M20 6L9 17l-5-5" }
-                                            }
-                                        }
-                                    }
+                        // Original Preserve Pitch block
+                        label {
+                            class: "px-2 py-1.5 rounded-md text-[12px] text-label-sm flex items-center gap-2.5 hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors w-full select-none whitespace-nowrap",
 
-                                    // Текст чекбокса теперь строго в одну линию
-                                    span {
-                                        class: format!(
-                                            "transition-colors {}",
-                                            if is_preserve_pitch() { "text-primary font-medium" } else { "text-secondary" }
-                                        ),
-                                        "Preserve"
-                                        br {}
-                                        "Pitch"
+                            input {
+                                r#type: "checkbox",
+                                class: "sr-only",
+                                checked: is_preserve_pitch(),
+
+                                onchange: move |_| {
+                                    let enabled = !is_preserve_pitch();
+                                    // let enabled = evt.checked();
+
+                                    if ctx
+                                        .command_tx
+                                        .read()
+                                        .send(PlayerCommand::SetPreservePitch(enabled))
+                                        .is_ok()
+                                    {
+                                        is_preserve_pitch.set(enabled);
                                     }
                                 }
+                            }
+
+                            div {
+                                class: format!(
+                                    "w-4 h-4 border rounded-md flex items-center justify-center transition-all duration-150 shrink-0 {}",
+                                    if is_preserve_pitch() {
+                                        "bg-primary border-primary text-white"
+                                    } else {
+                                        "border-neutral-300 bg-transparent"
+                                    }
+                                ),
+
+                                if is_preserve_pitch() {
+                                    svg {
+                                        class: "w-2.5 h-2.5 stroke-current",
+                                        fill: "none",
+                                        view_box: "0 0 24 24",
+                                        stroke_width: "3",
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+
+                                        path {
+                                            d: "M20 6L9 17l-5-5"
+                                        }
+                                    }
+                                }
+                            }
+
+                            span {
+                                class: format!(
+                                    "transition-colors {}",
+                                    if is_preserve_pitch() {
+                                        "text-primary font-medium"
+                                    } else {
+                                        "text-secondary"
+                                    }
+                                ),
+
+                                "Preserve"
+                                br {}
+                                "Pitch"
                             }
                         }
+                    }
                 }
             }
-            }
+
         }
     }
 }
