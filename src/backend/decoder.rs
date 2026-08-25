@@ -12,8 +12,10 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
+use crate::backend::timestretch::TimeStretchSource;
 use rodio::{Decoder, Player, decoder::DecoderBuilder};
 use rodio_wsola::WsolaSourceExt;
+
 use std::fs;
 
 // ---------------------------------------------------------------------------
@@ -101,7 +103,7 @@ where
     );
 
     state.player.append(spatial);
-    // state.player.set_speed(player_speed);
+    // state.player.set_speed(state.playback.speed);
 }
 
 // V2
@@ -119,18 +121,26 @@ pub(crate) fn build_audio_pipeline(
 
     if state.playback.preserve_pitch {
         // Decoder → WSOLA → Filters → Spatial
-        // let wsola_source = rodio_wsola::Wsola::new(decoder, state.playback.speed);
-        let wsola_source = decoder.wsola(state.playback.speed);
+        // let mut wsola_source = rodio_wsola::Wsola::new(decoder, 1.0);
+
+        let source = TimeStretchSource::new(decoder, state.playback.speed_shared.clone())
+            .map_err(|_| AudioError::RenderAudioFailed)?;
+
+        append_source(state, source);
+
+        // TimestretchSource controls the speed.
+        // state.player.set_speed(1.0);
+
+        /* let wsola_source = decoder.wsola(state.playback.speed);
+        // wsola_source.set_speed(state.playback.speed);
         append_source(state, wsola_source);
 
         // WSOLA controls the playback rate.
-        state.player.set_speed(state.playback.speed);
+        state.player.set_speed(1.0); */
     } else {
         // Decoder → Filters → Spatial
-        append_source(state, decoder);
-
-        // The player controls the playback rate.
-        state.player.set_speed(state.playback.speed);
+        let source = decoder.speed(state.playback.speed);
+        append_source(state, source);
     }
 
     Ok(())

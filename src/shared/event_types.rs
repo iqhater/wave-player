@@ -33,6 +33,19 @@ pub enum PlayerEvent {
         is_loop: bool,
     },
 
+    // Export Loop. perhaps move into StoreEvent?
+    ExportStarted,
+
+    ExportProgress {
+        progress: f32,
+    },
+
+    ExportFinished {
+        path: PathBuf,
+    },
+
+    ExportFailed,
+
     // Hard computed proccess
     WaveformChunkReady {
         chunk: Vec<f32>,

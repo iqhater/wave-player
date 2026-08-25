@@ -2,7 +2,7 @@ use crate::shared::event_types::{ErrorSender, StatusSender};
 use rodio::Player;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 // Audio global state
@@ -98,7 +98,9 @@ pub(crate) struct PlaybackState {
     pub playback_progress: Arc<AtomicU32>,
     pub volume: f32,
     pub speed: f32,
+    pub speed_shared: Arc<AtomicU32>,
     pub preserve_pitch: bool,
+    pub preserve_pitch_shared: Arc<AtomicBool>,
     pub last_progress_update: Instant,
 }
 
@@ -108,7 +110,9 @@ impl PlaybackState {
             playback_progress,
             volume: 0.35,
             speed: 1.0,
+            speed_shared: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             preserve_pitch: false,
+            preserve_pitch_shared: Arc::new(AtomicBool::new(false)),
             last_progress_update: Instant::now(),
         }
     }
