@@ -39,9 +39,9 @@ desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
 
 # Optimize build for release
-[profile.release]
-opt-level = "z"     # Оптимизация по размеру кода (вместо "3" для скорости)
-lto = true          # Link Time Optimization (удаляет неиспользуемый код из зависимостей)
-codegen-units = 1   # Улучшает работу LTO и сжатие
-panic = "abort"     # Удаляет тяжелую инфраструктуру для отлова паник
-strip = false        # Автоматически удаляет отладочную информацию (символы) из файлов
+# [profile.release]
+# opt-level = "z"     # Оптимизация по размеру кода (вместо "3" для скорости)
+# lto = true          # Link Time Optimization (удаляет неиспользуемый код из зависимостей)
+# codegen-units = 1   # Улучшает работу LTO и сжатие
+# panic = "abort"     # Удаляет тяжелую инфраструктуру для отлова паник
+# strip = false        # Автоматически удаляет отладочную информацию (символы) из файлов
