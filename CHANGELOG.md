@@ -1,3 +1,29 @@
+## [unreleased]
+
+### 🚀 Features
+
+- Add offline audio rendering
+- Integrate audio rendering commands
+- Update playback controls
+
+### 🐛 Bug Fixes
+
+- *(ui)* Close popups on outside click
+- *(ui)* Color knob ticks on drag
+- *(theme)* Swap dark mode hover shadows
+
+### 💼 Other
+
+- Skip production release builds
+
+### 🎨 Styling
+
+- Update player styles
+
+### ⚙️ Miscellaneous Tasks
+
+- Update audio dependencies
+- *(release)* Bump version to alpha 8
 ## [0.1.0-alpha.7] - 2026-08-22
 
 ### 🚀 Features
