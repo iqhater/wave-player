@@ -26,8 +26,11 @@ stratum-dsp = "1.0.0" # bpm & key detection
 audiotags = "0.5.0" # get meta info from tacks: title, album cover, etc...
 base64 = "0.23.0" # to convert jpeg album covers
 rusqlite = { version = "0.40.2", features = ["bundled"] } # SQLite db wrapper (bundled — компилируется сам SQLite, не требует системной библиотеки)
+rusqlite_migration = { version = "2.6.0", features = ["from-directory"] } # SQLite migrations
+include_dir = "0.7.4" # include directory for migrations
 # rayon = "1.12.0"
 ebur128 = "0.1.10" # LUFS measure
+thiserror = "2.0.20" # derive macro error handling
 
 
 [features]
@@ -39,9 +42,22 @@ desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
 
 # Optimize build for release
-# [profile.release]
-# opt-level = "z"     # Оптимизация по размеру кода (вместо "3" для скорости)
-# lto = true          # Link Time Optimization (удаляет неиспользуемый код из зависимостей)
-# codegen-units = 1   # Улучшает работу LTO и сжатие
-# panic = "abort"     # Удаляет тяжелую инфраструктуру для отлова паник
-# strip = false        # Автоматически удаляет отладочную информацию (символы) из файлов
+[unstable]
+build-std = ["std", "panic_abort", "core", "alloc"]
+build-std-features = ["panic_immediate_abort"]
+
+[build]
+rustflags = [
+    "-Clto",
+    "-Zvirtual-function-elimination",
+    "-Zlocation-detail=none"
+]
+
+[profile.release]
+opt-level = "z"     # Оптимизация по размеру кода (вместо "3" для скорости)
+debug = false
+lto = true          # Link Time Optimization (удаляет неиспользуемый код из зависимостей)
+codegen-units = 1   # Улучшает работу LTO и сжатие
+panic = "abort"     # Удаляет тяжелую инфраструктуру для отлова паник
+# strip = "debuginfo" # Автоматически удаляет отладочную информацию (символы) из файлов
+incremental = false

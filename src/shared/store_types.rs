@@ -2,18 +2,25 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Единый трек в библиотеке.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Track {
+    pub id: i64,
     pub path: PathBuf,
+    pub file_size: i64,
     pub title: String,
     pub artist: String,
-    pub duration_secs: f32,
+    pub album: Option<String>,
+    pub genre: Option<String>,
+    /// Длительность в миллисекундах.
+    pub duration: i64,
     pub bpm: Option<f32>,
     pub key: Option<String>,
-    /// id обложки в кэше (или None)
-    pub cover_id: Option<String>,
-    pub play_count: u64,
-    pub added_at: i64, // unix ts
+    pub play_count: i64,
+    /// JSON-объект с параметрами аудиоэффектов.
+    pub audio_fx_params: Option<String>,
+    pub waveform_cache_path: Option<PathBuf>,
+    /// Timestamp в формате SQLite TEXT, например `2026-08-26 12:34:56`.
+    pub created_at: String,
 }
 
 /// Избранное.

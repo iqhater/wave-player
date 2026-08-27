@@ -61,7 +61,7 @@ pub enum StoreCommand {
         path: PathBuf,
     },
     RemoveFromFavorites {
-        path: PathBuf,
+        track_id: i64,
     },
     GetFavorites,
 }

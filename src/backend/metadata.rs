@@ -7,6 +7,7 @@ pub struct TrackMetadata {
     pub title: String,
     /// JPEG bytes for album cover, or empty Vec if no cover
     pub cover: Vec<u8>,
+    pub track_path: String,
 }
 
 /// Parse metadata from audio file using audiotags.
@@ -31,6 +32,7 @@ pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
                 artist: a,
                 title: t,
                 cover,
+                track_path: path.to_string_lossy().into_owned(),
             };
         }
 
@@ -47,6 +49,7 @@ pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
             artist: artist.unwrap_or(parsed_artist),
             title: title.unwrap_or(parsed_title),
             cover,
+            track_path: path.to_string_lossy().into_owned(),
         };
     }
 
@@ -63,6 +66,7 @@ pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
         artist,
         title,
         cover: vec![],
+        track_path: path.to_string_lossy().into_owned(),
     }
 }
 

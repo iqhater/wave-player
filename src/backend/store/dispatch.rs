@@ -13,21 +13,6 @@ pub(crate) fn dispatch(
     command: StoreCommand,
 ) {
     match command {
-        StoreCommand::SaveTrackPlaysCount { path } => {
-            db.increment_play_count(&path);
-
-            if let Some(count) = db.play_count(&path) {
-                let _ = store_tx.broadcast(StoreEvent::TrackPlaysCountUpdated { path, count });
-            }
-        }
-
-        StoreCommand::UpdateTrackInfo {
-            path,
-            duration_secs,
-        } => {
-            db.edit_track(&path, duration_secs);
-        }
-
         StoreCommand::SetConfig(config_data) => {
             config.save(&config_data);
         }
@@ -43,26 +28,60 @@ pub(crate) fn dispatch(
         }
 
         // Favorites
-        StoreCommand::AddToFavorites { path } => {
-            db.add_favorite(&path);
-            let _ = store_tx.broadcast(StoreEvent::FavoritesChanged {
-                path,
-                is_favorite: true,
-            });
-        }
+        StoreCommand::AddToFavorites { path } => match db.add_favorite(&path) {
+            Ok(track_id) => {
+                match store_tx.try_broadcast(StoreEvent::FavoritesChanged {
+                    track_id,
+                    is_favorite: true,
+                }) {
+                    Ok(_) => {
+                        println!("backend: favorite added, track_id={track_id}");
+                    }
+                    Err(error) => {
+                        eprintln!("backend: failed to broadcast favorite addition: {error:?}");
+                    }
+                }
+            }
+            Err(error) => {
+                eprintln!("failed to add track to favorites: {error}");
+            }
+        },
 
-        StoreCommand::RemoveFromFavorites { path } => {
-            db.remove_favorite(&path);
-            let _ = store_tx.broadcast(StoreEvent::FavoritesChanged {
-                path,
-                is_favorite: false,
-            });
-        }
+        StoreCommand::RemoveFromFavorites { track_id } => match db.remove_favorite(track_id) {
+            Ok(()) => {
+                match store_tx.try_broadcast(StoreEvent::FavoritesChanged {
+                    track_id,
+                    is_favorite: false,
+                }) {
+                    Ok(_) => {
+                        println!("backend: favorite removed, track_id={track_id}");
+                    }
+                    Err(error) => {
+                        eprintln!("backend: failed to broadcast favorite removal: {error:?}");
+                    }
+                }
+            }
+            Err(error) => {
+                eprintln!("failed to remove track {track_id} from favorites: {error}");
+            }
+        },
 
         StoreCommand::GetFavorites => {
-            let _ = store_tx.broadcast(StoreEvent::FavoritesLoaded {
-                tracks: db.favorites(),
-            });
+            let tracks = db.favorites();
+
+            println!("backend: loaded {} favorite track(s)", tracks.len());
+            println!("backend: favorite track(s) {:?}", tracks);
+
+            match store_tx.try_broadcast(StoreEvent::FavoritesLoaded { tracks }) {
+                Ok(_) => {
+                    println!("backend: FavoritesLoaded sent");
+                }
+                Err(error) => {
+                    eprintln!("backend: failed to broadcast FavoritesLoaded: {error:?}");
+                }
+            }
         }
+
+        _ => {}
     }
 }

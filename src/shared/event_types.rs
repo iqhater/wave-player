@@ -102,7 +102,7 @@ pub enum StoreEvent {
     },
     // Favorites changed event
     FavoritesChanged {
-        path: PathBuf,
+        track_id: i64,
         is_favorite: bool,
     },
     /// Счётчик прослушиваний обновился.

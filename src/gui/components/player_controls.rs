@@ -1,4 +1,6 @@
+use super::favorites::FavoritesButton;
 use super::filters_spatial::FiltersAndSpatial;
+
 use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::PlayerEvent;
@@ -15,7 +17,7 @@ pub fn PlayerControls() -> Element {
     let mut is_playing = use_signal(|| false);
     let mut repeat_enabled = use_signal(|| ctx.config.read().audio.repeat_track);
     let mut shuffle_enabled = use_signal(|| false);
-    let mut favorite_enabled = use_signal(|| false);
+    // let mut favorite_enabled = use_signal(|| false);
 
     // Слушаем статусы
     use_future(move || {
@@ -83,14 +85,15 @@ pub fn PlayerControls() -> Element {
                         }
                     }
                 }
-                ControlIconButton { icon: "favorite", title: "add to favorites",
+                FavoritesButton {}
+                /* ControlIconButton { icon: "favorite", title: "add to favorites",
                     active: favorite_enabled(),
                     click_handler: {
                         move |_| {
                             favorite_enabled.set(!favorite_enabled());
                         }
                     }
-                }
+                } */
             }
 
             div { class: "h-6 w-[1px] bg-outline-variant opacity-50" }
