@@ -1,4 +1,14 @@
-## [unreleased]
+## [0.1.0-alpha.9] - 2026-08-29
+
+### 🚀 Features
+
+- Add favorites track management
+- Improve favorites metadata and UI
+
+### 🐛 Bug Fixes
+
+- *(ui)* Refine player subtitle
+## [0.1.0-alpha.8] - 2026-08-26
 
 ### 🚀 Features
 
