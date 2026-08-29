@@ -17,8 +17,8 @@ pub fn run_store_loop(
     app_config: ConfigStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
     std::thread::spawn(move || {
-        // let mut db = match DbStore::open(&data_dir.join("wave_player.db")) {
-        let mut db = match DbStore::open(&PathBuf::from("D:/Web_Dev/Dev/Rust/wave_player/db/wave_player.db")) {
+        let mut db = match DbStore::open(&data_dir.join("wave_player.db")) {
+            // let mut db = match DbStore::open(&PathBuf::from("D:/Web_Dev/Dev/Rust/wave_player/db/wave_player.db")) {
             Ok(db) => db,
             Err(error) => {
                 eprintln!("failed to open database: {error:#?}");

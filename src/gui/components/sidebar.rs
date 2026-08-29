@@ -53,7 +53,7 @@ pub fn Sidebar() -> Element {
                             p {
                                 class: "font-label-sm text-label-sm text-secondary \
                                         tracking-widest uppercase whitespace-nowrap",
-                                "Premium Audio"
+                                "Audio Space"
                             }
                         }
                     }
