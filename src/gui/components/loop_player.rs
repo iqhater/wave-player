@@ -52,6 +52,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
     // Контейнер 600px, родитель по центру — cl примерно 300px при 1200px экране
     // Но чтобы не гадать — просто читаем из onmounted один раз
     let mut cl = use_signal(|| 0.0f32);
+    let mut container_width = use_signal(|| 600.0f32);
 
     let lp = if total_duration > 0.0 {
         loop_start() / total_duration * 100.0
@@ -106,7 +107,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
 
     rsx! {
         div {
-            class: "absolute w-[600px] h-28 rounded-xl select-none pointer-events-auto",
+            class: "absolute w-full max-w-[600px] h-28 rounded-xl select-none pointer-events-auto",
             "data-loop-start": "{loop_start()}",
             "data-loop-end": "{loop_end()}",
             // style: "width: 600px;",
@@ -114,6 +115,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                 spawn(async move {
                     if let Ok(r) = el.get_client_rect().await {
                         cl.set(r.origin.x as f32);
+                        container_width.set(r.size.width as f32);
                     }
                 });
             },
@@ -183,7 +185,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                         if let Some(mode) = dragging() {
                             let left = cl();
                             let cx = e.data().client_coordinates().x as f32 - left;
-                            let container_width = 600.0;
+                            // let container_width = 600.0;
+                            let container_width = container_width().max(1.0);
 
                             match mode {
                                 "M" => {

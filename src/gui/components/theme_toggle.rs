@@ -12,7 +12,8 @@ pub fn ThemeToggle() -> Element {
     let ctx = use_context::<PlayerContext>();
 
     rsx! {
-        div { class: "absolute top-8 right-8 z-50",
+        div { class: "fixed right-4 top-5 z-50
+                      lg:absolute lg:right-8 lg:top-8",
             button {
                 class: "w-12 h-12 rounded-full glass-toggle flex items-center justify-center text-secondary cursor-pointer hover:text-primary hover:scale-110 transition-all duration-300",
                 "aria-label": "Toggle Theme",

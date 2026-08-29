@@ -38,16 +38,16 @@ pub fn BpmKey() -> Element {
     });
 
     rsx! {
-        div { class: "flex gap-4",
+        div { class: "flex items-start justify-center gap-12 lg:gap-4",
             div { class: "flex flex-col",
                 span { class: "text-label-sm uppercase text-secondary opacity-60", "BPM" }
-                span { class: "font-bold text-primary",
+                span { class: "text-2xl font-bold text-primary lg:text-xl",
                     if bpm() > 0.0 { "{bpm()}" } else { "—" }
                 }
             }
             div { class: "flex flex-col",
                 span { class: "text-label-sm uppercase text-secondary opacity-60", "Key" }
-                span { class: "font-bold text-primary", "{key()} {key_camelot()}" }
+                span { class: "text-2xl font-bold text-primary lg:text-xl", "{key()} {key_camelot()}" }
             }
         }
     }

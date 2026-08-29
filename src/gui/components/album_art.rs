@@ -38,9 +38,13 @@ pub fn AlbumArt() -> Element {
     };
 
     rsx! {
-        div { class: "relative group",
-            div { class: "rounded-[32px] neumorph-raised p-4 flex items-center justify-center transition-transform duration-500 hover:scale-[1.02]",
-                style: "width: 300px; height: 300px;",
+        div { class: "relative group w-full max-w-[300px]",
+            div { class: "flex aspect-square w-full items-center justify-center
+                            rounded-[32px] p-4
+                            neumorph-raised
+                            transition-transform duration-500
+                            hover:scale-[1.02]",
+                // style: "width: 300px; height: 300px;",
                 div { class: "w-full h-full rounded-[24px] overflow-hidden shadow-sm flex items-center justify-center",
                     if has_cover {
                         img {

@@ -4,7 +4,10 @@ use dioxus::prelude::*;
 #[component]
 pub fn Footer() -> Element {
     rsx! {
-        footer { class: "fixed bottom-0 w-full h-16 z-10 flex items-center justify-between px-container-padding bg-transparent pointer-events-none",
+        footer { class: "pointer-events-none fixed bottom-0 z-10
+                    hidden h-16 w-full items-center justify-between
+                    bg-transparent px-container-padding
+                    lg:flex",
             div { class: "flex items-center gap-stack-md pointer-events-auto" }
 
             div { class: "flex gap-stack-md pointer-events-auto",

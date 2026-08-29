@@ -6,22 +6,31 @@ use dioxus::prelude::*;
 pub fn Sidebar() -> Element {
     let current_route = use_route::<Route>();
     let mut collapsed = use_signal(|| false);
+    let mut mobile_menu_open = use_context::<Signal<bool>>();
 
     let aside_class = if collapsed() {
-        "h-screen w-20 flex-shrink-0 flex flex-col py-stack-lg px-3 \
-          bg-surface shadow-[4px_4px_12px_rgba(0,0,0,0.05)] \
-          z-20 bg-surface-container-high overflow-hidden \
-          transition-[width,padding] duration-300 ease-in-out"
+        "fixed inset-0 z-50
+         flex h-screen w-full flex-shrink-0 flex-col
+         overflow-hidden bg-surface-container-high px-3 py-stack-lg
+         shadow-[4px_4px_12px_rgba(0,0,0,0.05)]
+         transition-[width,padding,transform] duration-300 ease-in-out
+         lg:static lg:inset-auto lg:z-20 lg:h-screen lg:w-20 lg:flex"
     } else {
-        "h-screen w-64 flex-shrink-0 flex flex-col py-stack-lg px-gutter \
-          bg-surface shadow-[4px_4px_12px_rgba(0,0,0,0.05)] \
-          z-20 bg-surface-container-high overflow-hidden \
-          transition-[width,padding] duration-300 ease-in-out"
+        "fixed inset-0 z-50
+         flex h-screen w-full flex-shrink-0 flex-col
+         overflow-hidden bg-surface-container-high px-gutter py-stack-lg
+         shadow-[4px_4px_12px_rgba(0,0,0,0.05)]
+         transition-[width,padding,transform] duration-300 ease-in-out
+         lg:static lg:inset-auto lg:z-20 lg:h-screen lg:w-64 lg:flex"
     };
 
     rsx! {
         aside {
-            class: "{aside_class}",
+            class: if mobile_menu_open() {
+                "{aside_class} translate-x-0"
+            } else {
+                "{aside_class} -translate-x-full lg:translate-x-0"
+            },
 
             // Header
             div {
@@ -71,25 +80,36 @@ pub fn Sidebar() -> Element {
                              transition-all active:scale-95"
                         },
 
-                        title: if collapsed() {
+                        title: if mobile_menu_open() {
+                            "Close menu"
+                        } else if collapsed() {
                             "Expand sidebar"
                         } else {
                             "Collapse sidebar"
                         },
 
-                        "aria-label": if collapsed() {
+                        "aria-label": if mobile_menu_open() {
+                            "Close menu"
+                        } else if collapsed() {
                             "Expand sidebar"
                         } else {
                             "Collapse sidebar"
                         },
 
                         onclick: move |_| {
-                            collapsed.toggle();
+                            // collapsed.toggle();
+                            if mobile_menu_open() {
+                                mobile_menu_open.set(false);
+                            } else {
+                                collapsed.toggle();
+                            }
                         },
 
                         span {
                             class: "material-symbols-outlined text-[22px]",
-                            if collapsed() {
+                            if mobile_menu_open() {
+                                "close"
+                            } else if collapsed() {
                                 "menu"
                             } else {
                                 "menu_open"
@@ -162,8 +182,10 @@ pub fn Sidebar() -> Element {
             // Updates block
             if !collapsed() {
                 div {
-                    class: "mt-auto p-4 bg-primary rounded-2xl text-surface \
-                            border border-outline/10 shadow-lg",
+                    class: "mt-auto w-[calc(100%-2rem)] max-w-[520px] mx-auto p-4
+                            bg-primary rounded-2xl text-surface
+                            border border-outline/10 shadow-lg
+                            lg:w-full lg:max-w-none lg:mx-0",
 
                     p {
                         class: "text-[10px] text-on-surface font-medium mb-1 \
@@ -223,6 +245,8 @@ fn SidebarButton(
         "w-full gap-4 px-4"
     };
 
+    let mut mobile_menu_open = use_context::<Signal<bool>>();
+
     rsx! {
         Link {
             class: if compact {
@@ -231,6 +255,8 @@ fn SidebarButton(
                 "w-full"
             },
             to: screen,
+
+            onclick: move |_| mobile_menu_open.set(false),
 
             button {
                 class: "{active_class} {layout_class}",

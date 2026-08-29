@@ -250,7 +250,10 @@ pub fn Waveform() -> Element {
             }
 
             div {
-                class: "w-full h-28 relative flex items-center neumorph-sunken rounded-2xl hover:shadow",
+                class: "relative flex h-28 w-full min-w-0
+                            items-center overflow-hidden
+                            rounded-2xl neumorph-sunken
+                            hover:shadow",
                 onmounted: move |el| {
                     spawn(async move {
                         if let Ok(rect) = el.get_client_rect().await {
@@ -431,15 +434,18 @@ pub fn Waveform() -> Element {
 
             if has_track() {
                 // Time scale
-                div { class: "relative w-full h-6 mt-1 select-none",
+                div { class: "relative mt-1 h-6 w-full min-w-0
+                            select-none overflow-hidden",
                     {time_marks.into_iter().map(|(pct, label)| {
                         rsx! {
                             div {
-                                class: "absolute top-0 flex flex-col items-center",
+                                class: "absolute top-0 flex max-w-[25%]
+                                        flex-col items-center overflow-hidden",
                                 style: "left: {pct}%; transform: translateX(-50%);",
                                 div { class: "w-[1px] h-1.5 bg-secondary/40" }
                                 span {
-                                    class: "text-[12px] text-secondary/60 mt-0.5 whitespace-nowrap",
+                                    class: "mt-0.5 max-w-full truncate
+                                            whitespace-nowrap text-[12px] text-secondary/60",
                                     "{label}"
                                 }
                             }

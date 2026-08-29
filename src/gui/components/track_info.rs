@@ -30,11 +30,14 @@ pub fn TrackInfo() -> Element {
     });
 
     rsx! {
-        div { class: "text-center",
-            h2 { class: "font-headline-md text-headline-md text-on-surface mb-1",
+        div { class: "w-full min-w-0 px-2 text-center",
+            h2 { class: "mb-1 w-full truncate
+                        text-xl font-semibold text-on-surface
+                        lg:text-headline-md",
                 if title.is_empty() { "No track loaded" } else { "{title()}" }
             }
-            p { class: "font-body-md text-body-md text-secondary opacity-80",
+            p { class: "w-full truncate text-base text-secondary opacity-80
+                        lg:text-body-md",
                 if artist.is_empty() { "—" } else { "{artist()}" }
             }
         }

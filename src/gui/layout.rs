@@ -26,6 +26,10 @@ static MATERIAL_SYMBOLS_OUTLINED: Asset =
 pub fn RootLayout() -> Element {
     let ctx = use_context::<PlayerContext>();
     let route = use_route::<Route>();
+
+    let mut mobile_menu_open = use_signal(|| false);
+    use_context_provider(|| mobile_menu_open);
+
     let hide_controls = matches!(
         route,
         Route::TermsOfService | Route::PrivacyPolicy | Route::Changelog
@@ -96,11 +100,31 @@ pub fn RootLayout() -> Element {
 
                 ThemeToggle {}
 
-                // Sidebar menu (always seen)
+                // Mobile top bar
+                MobileHeader {}
+
+                // Dark backdrop when the mobile menu is open
+                if mobile_menu_open() {
+                    div {
+                        class: "fixed inset-0 z-40 bg-black/40 lg:hidden",
+                        onclick: move |_| mobile_menu_open.set(false),
+                    }
+                }
+
+                // Sidebar remains unchanged on desktop and becomes an overlay menu
+                // on mobile/tablet.
                 Sidebar {}
 
-                main { class: "flex-grow flex flex-col items-center justify-center relative bg-surface p-container-padding overflow-y-auto",
-                    div { class: "{content_width_class} flex flex-col items-center gap-8",
+                main { class: "relative flex min-w-0 flex-1 flex-col
+                               items-center justify-center
+                               overflow-y-auto bg-surface
+                               px-4 pb-40 pt-24
+                               lg:justify-center
+                               lg:p-container-padding
+                               lg:pb-0",
+                    div { class: "{content_width_class}
+                                  flex w-full flex-col items-center gap-6
+                                  lg:gap-8",
 
                         // Router paste here: Home, Recents, Favorites or Settings
                         Outlet::<Route> {}
@@ -116,6 +140,60 @@ pub fn RootLayout() -> Element {
 
             // Footer (always seen)
             Footer {}
+        }
+    }
+}
+
+#[component]
+fn MobileHeader() -> Element {
+    let mut mobile_menu_open = use_context::<Signal<bool>>();
+
+    rsx! {
+        header {
+            class: "fixed left-0 right-0 top-0 z-30
+                    flex h-20 items-center justify-between
+                    bg-surface px-4
+                    lg:hidden",
+
+            button {
+                class: "flex h-10 w-10 items-center justify-center
+                        rounded-xl text-secondary
+                        hover:bg-surface-container-low
+                        hover:text-primary
+                        cursor-pointer transition-all",
+
+                title: "Open menu",
+                "aria-label": "Open menu",
+
+                onclick: move |_| mobile_menu_open.set(true),
+
+                span {
+                    class: "material-symbols-outlined text-[24px]",
+                    "menu"
+                }
+            }
+
+            div {
+                class: "flex flex-col items-center justify-center",
+
+                span {
+                    class: "text-[12px] font-bold uppercase
+                            tracking-[0.18em] text-secondary",
+
+                    "Audio Space"
+                }
+
+                span {
+                    class: "text-xl font-bold tracking-tight text-primary",
+
+                    "Wave Player"
+                }
+            }
+
+            // Empty element keeps the title centered.
+            div {
+                class: "h-10 w-10",
+            }
         }
     }
 }
