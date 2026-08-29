@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::backend::state::AudioState;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::AudioError;
+use crate::shared::event_types::PlayerEvent;
 
 pub(crate) fn dispatch(
     state: &mut AudioState,
@@ -50,5 +51,17 @@ pub(crate) fn dispatch(
         PlayerCommand::LoadFile(path) => track::load_file(state, PathBuf::from(path)),
 
         PlayerCommand::ExportLoop(path) => export::save_loop(state, path),
+
+        // State commands
+        PlayerCommand::RequestState => {
+            let path = state.track.path.clone();
+            let is_playing = playback::is_playing(state);
+
+            let _ = state
+                .status_tx
+                .try_broadcast(PlayerEvent::PlayerState { path, is_playing });
+
+            Ok(())
+        }
     }
 }

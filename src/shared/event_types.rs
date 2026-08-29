@@ -67,6 +67,12 @@ pub enum PlayerEvent {
         shortterm_lufs: Option<f32>,
         integrated_lufs: Option<f32>,
     },
+
+    // Player state for different screens
+    PlayerState {
+        path: Option<PathBuf>,
+        is_playing: bool,
+    },
 }
 pub type StatusSender = BroadcastSender<PlayerEvent>;
 // pub type StatusReceiver = BroadcastReceiver<PlayerEvent>;

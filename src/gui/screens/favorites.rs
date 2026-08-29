@@ -1,30 +1,36 @@
 use crate::PlayerContext;
 use crate::shared::command_types::{PlayerCommand, StoreCommand};
-use crate::shared::event_types::StoreEvent;
+use crate::shared::event_types::{PlayerEvent, StoreEvent};
+use std::path::PathBuf;
+use std::time::Duration;
+
 use crate::shared::store_types::Track;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
+
+const FAVORITES_GRID_COLUMNS: &str = "grid-cols-[40px_48px_minmax(180px,2fr)_minmax(140px,1.5fr)_minmax(120px,1.5fr)_72px_72px_72px_72px_40px]";
 
 #[component]
 pub fn Favorites() -> Element {
     let ctx = use_context::<PlayerContext>();
     let mut tracks = use_signal(Vec::<Track>::new);
 
-    // Запрашиваем избранные треки после монтирования экрана.
-    /* use_effect(move || {
-        let _ = ctx.store_cmd_tx.read().send(StoreCommand::GetFavorites);
-    }); */
+    let mut current_track_path = use_signal(|| None::<PathBuf>);
+    let mut is_playing = use_signal(|| false);
 
-    // Получаем данные и изменения от store.
+    // Сначала создаём receiver, затем отправляем запрос.
+    // Иначе FavoritesLoaded может прийти до подписки UI.
     use_future(move || {
         let mut store_rx = ctx.store_event_rx.read().clone();
         let store_cmd_tx = ctx.store_cmd_tx;
 
         async move {
-            println!("ui: Favorites component mounted");
+            println!("ui: Favorites listener started");
 
             match store_cmd_tx.read().send(StoreCommand::GetFavorites) {
-                Ok(()) => println!("ui: GetFavorites sent"),
+                Ok(()) => {
+                    println!("ui: GetFavorites sent");
+                }
                 Err(error) => {
                     eprintln!("ui: failed to send GetFavorites: {error}");
                     return;
@@ -32,15 +38,14 @@ pub fn Favorites() -> Element {
             }
 
             while let Some(event) = store_rx.next().await {
+                println!("ui: received store event: {event:?}");
+
                 match event {
                     StoreEvent::FavoritesLoaded {
                         tracks: loaded_tracks,
                     } => {
-                        println!(
-                            "ui: loaded {} favorite track(s) {:?}",
-                            loaded_tracks.len(),
-                            loaded_tracks
-                        );
+                        println!("ui: loaded {} favorite track(s)", loaded_tracks.len());
+
                         tracks.set(loaded_tracks);
                     }
 
@@ -49,14 +54,49 @@ pub fn Favorites() -> Element {
                         is_favorite,
                     } => {
                         if is_favorite {
-                            // После добавления запрашиваем полный список.
-                            let _ = ctx.store_cmd_tx.read().send(StoreCommand::GetFavorites);
+                            // После добавления получаем обновлённый список.
+                            let _ = store_cmd_tx.read().send(StoreCommand::GetFavorites);
                         } else {
-                            // После удаления сразу убираем трек из локального списка.
+                            // После удаления сразу убираем строку из UI.
                             tracks.write().retain(|track| track.id != track_id);
                         }
                     }
 
+                    _ => {}
+                }
+            }
+
+            eprintln!("ui: Favorites store event stream closed");
+        }
+    });
+
+    use_future(move || {
+        let mut status_rx = ctx.status_rx.read().clone();
+        let command_tx = ctx.command_tx;
+
+        async move {
+            let _ = command_tx.read().send(PlayerCommand::RequestState);
+
+            while let Some(event) = status_rx.next().await {
+                match event {
+                    PlayerEvent::PlayerState {
+                        path,
+                        is_playing: playing,
+                    } => {
+                        current_track_path.set(path);
+                        is_playing.set(playing);
+                    }
+
+                    PlayerEvent::Started { metadata, .. } => {
+                        current_track_path.set(Some(PathBuf::from(metadata.track_path)));
+                        is_playing.set(true);
+                    }
+                    PlayerEvent::Resumed => {
+                        is_playing.set(true);
+                    }
+                    PlayerEvent::Paused | PlayerEvent::Finished => {
+                        is_playing.set(false);
+                    }
                     _ => {}
                 }
             }
@@ -67,10 +107,10 @@ pub fn Favorites() -> Element {
 
     rsx! {
         section {
-            class: "w-full flex flex-col gap-6",
+            class: "w-full flex flex-col gap-3",
 
             div {
-                class: "flex items-center justify-between",
+                class: "flex items-center justify-between px-4",
 
                 h1 {
                     class: "text-2xl font-semibold",
@@ -81,6 +121,22 @@ pub fn Favorites() -> Element {
                     class: "text-sm text-secondary",
                     "{tracks_snapshot.len()} tracks"
                 }
+            }
+
+            // Заголовки колонок.
+            div {
+                class: "w-full grid {FAVORITES_GRID_COLUMNS} items-center divide-x divide-outline-variant/50 gap-2 px-3 mt-4 text-xs font-semibold text-secondary uppercase",
+
+                div {}
+                div {}
+                div { "Title" }
+                div { "Artist" }
+                div { "Album" }
+                div { class: "text-center", "BPM" }
+                div { class: "text-center", "Key" }
+                div { class: "text-center", "Plays" }
+                div { class: "text-center", "Duration" }
+                div {}
             }
 
             if tracks_snapshot.is_empty() {
@@ -103,24 +159,41 @@ pub fn Favorites() -> Element {
                 }
             } else {
                 div {
-                    class: "flex flex-col gap-3",
+                    class: "w-full flex flex-col gap-3",
 
                     for track in tracks_snapshot {
                         FavoriteTrackRow {
                             key: "{track.id}",
+                            is_playing: current_track_path() == Some(track.path.clone()) && is_playing(),
                             track,
                             on_play: {
                                 let command_tx = ctx.command_tx;
+                                let current_track_path = current_track_path;
+                                let is_playing = is_playing;
+
                                 move |track: Track| {
-                                    let _ = command_tx
-                                        .read()
-                                        .send(PlayerCommand::LoadFile(
+                                    let is_current_track =
+                                        current_track_path() == Some(track.path.clone());
+
+                                    let command = if is_current_track {
+                                        if is_playing() {
+                                            PlayerCommand::Pause
+                                        } else {
+                                            PlayerCommand::Resume
+                                        }
+                                    } else {
+                                        PlayerCommand::LoadFile(
                                             track.path.to_string_lossy().into_owned(),
-                                        ));
+                                        )
+                                    };
+
+                                    let _ = command_tx.read().send(command);
                                 }
                             },
+
                             on_remove: {
                                 let store_cmd_tx = ctx.store_cmd_tx;
+
                                 move |track_id: i64| {
                                     let _ = store_cmd_tx
                                         .read()
@@ -143,55 +216,129 @@ pub fn Favorites() -> Element {
 fn FavoriteTrackRow(
     track: Track,
     on_play: EventHandler<Track>,
+    is_playing: bool,
     on_remove: EventHandler<i64>,
 ) -> Element {
     let track_id = track.id;
-    let track_path = track.path.to_string_lossy().into_owned();
+    let track_for_play = track.clone();
+
+    let bpm = track
+        .bpm
+        .map(|value| format!("{value:.1}"))
+        .unwrap_or_else(|| "—".to_string());
+
+    let key = track.key.clone().unwrap_or_else(|| "—".to_string());
+
+    let album = track.album.clone().unwrap_or_else(|| "—".to_string());
+
+    let duration = format_duration(track.duration);
 
     rsx! {
         div {
-            class: "w-full flex items-center gap-4 p-4 rounded-2xl neumorph-raised",
+            class: "w-full grid {FAVORITES_GRID_COLUMNS} items-center divide-x divide-outline-variant/50 gap-2 px-3 py-1 rounded-2xl neumorph-raised",
 
+            // Кнопка воспроизведения.
             button {
-                class: "w-12 h-12 shrink-0 rounded-full flex items-center justify-center bg-primary text-on-primary hover:scale-105 active:scale-95 transition-all cursor-pointer",
-                title: "play track",
-                onclick: move |_| on_play.call(track.clone()),
+                class: "w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-primary hover:bg-surface-container hover:scale-105 active:scale-95 transition-all cursor-pointer",
+                title: if is_playing { "pause track" } else { "play track" },
+                onclick: move |_| on_play.call(track_for_play.clone()),
 
                 span {
-                    class: "material-symbols-outlined",
-                    "play_arrow"
+                    class: "material-symbols-outlined text-[24px]",
+                    if is_playing { "pause" } else { "play_arrow" }
                 }
             }
 
+            // Обложка или компактная заглушка.
             div {
-                class: "min-w-0 flex-1",
+                class: "w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-surface-container flex items-center justify-center",
+
+                span {
+                    class: "material-symbols-outlined text-[20px] text-secondary",
+                    "music_note"
+                }
+                /* if let Some(cover_path) = track.cover_cache_path.clone() {
+                    img {
+                        class: "w-full h-full object-cover",
+                        src: cover_path.to_string_lossy().into_owned(),
+                        alt: "Album cover",
+                    }
+                } else {
+                    span {
+                        class: "material-symbols-outlined text-[20px] text-secondary",
+                        "music_note"
+                    }
+                } */
+            }
+
+            // Название.
+            div {
+                class: "min-w-0",
 
                 p {
-                    class: "truncate font-medium",
+                    class: "truncate font-small",
+                    title: "{track.title}",
                     "{track.title}"
                 }
-
-                p {
-                    class: "truncate text-sm text-secondary",
-                    "{track.artist}"
-                }
-
-                p {
-                    class: "truncate text-xs text-secondary opacity-70",
-                    "{track_path}"
-                }
             }
 
+            // Исполнитель.
+            div {
+                class: "min-w-0 truncate text-secondary text-sm",
+                title: "{track.artist}",
+                "{track.artist}"
+            }
+
+            // Альбом.
+            div {
+                class: "min-w-0 truncate text-secondary opacity-70 text-sm",
+                title: "{album}",
+                "{album}"
+            }
+
+            // BPM.
+            div {
+                class: "text-center text-sm",
+                "{bpm}"
+            }
+
+            // Тональность.
+            div {
+                class: "text-center text-sm",
+                "{key}"
+            }
+
+            // Количество прослушиваний.
+            div {
+                class: "text-center text-sm",
+                "{track.play_count}"
+            }
+
+            // Длительность.
+            div {
+                class: "text-center text-secondary text-sm",
+                "{duration}"
+            }
+
+            // Удаление.
             button {
-                class: "w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-secondary hover:text-error hover:bg-surface-container cursor-pointer transition-all",
+                class: "w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-secondary hover:text-error hover:bg-surface-container cursor-pointer transition-all",
                 title: "remove from favorites",
                 onclick: move |_| on_remove.call(track_id),
 
                 span {
-                    class: "material-symbols-outlined",
+                    class: "material-symbols-outlined text-[20px]",
                     "delete"
                 }
             }
         }
     }
+}
+
+fn format_duration(duration_ms: i64) -> String {
+    let total_seconds = (duration_ms.max(0) / 1000) as u64;
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+
+    format!("{minutes}:{seconds:02}")
 }

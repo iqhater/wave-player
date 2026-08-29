@@ -1,5 +1,6 @@
 use super::db::DbStore;
 use crate::shared::store_types::Track;
+use crate::shared::store_types::TrackData;
 use std::path::{Path, PathBuf};
 
 // Favorites table operations
@@ -8,9 +9,9 @@ impl DbStore {
     ///
     /// Если трека ещё нет в tracks, сначала создаётся минимальная запись.
     /// Повторно добавить уже избранный трек невозможно.
-    pub fn add_favorite(&mut self, path: &Path) -> rusqlite::Result<i64> {
+    pub fn add_favorite(&mut self, path: &Path, track_data: &TrackData) -> rusqlite::Result<i64> {
         // Здесь path используется только для создания или поиска самого трека.
-        let track_id = self.add_track(path)?;
+        let track_id = self.add_track(path, track_data)?;
 
         // Проверяем избранное строго по track_id.
         if self.is_favorite(track_id)? {
@@ -100,7 +101,7 @@ impl DbStore {
             .collect()
     }
 
-    fn add_track(&mut self, path: &Path) -> rusqlite::Result<i64> {
+    fn add_track(&mut self, path: &Path, track_data: &TrackData) -> rusqlite::Result<i64> {
         let path_str = path.to_string_lossy();
 
         let file_size = std::fs::metadata(path)
@@ -108,14 +109,32 @@ impl DbStore {
             .and_then(|metadata| i64::try_from(metadata.len()).ok())
             .unwrap_or(0);
 
+        let title = track_data.title.clone();
+        let artist = track_data.artist.clone();
+        let album = track_data.album.clone();
+        let genre = track_data.genre.clone();
+        let duration = track_data.duration;
+
         self.conn.execute(
             "INSERT OR IGNORE INTO tracks (
                  path,
                  file_size,
+                 title,
+                 artist,
+                 album,
+                 genre,
                  duration
              )
-             VALUES (?1, ?2, 0)",
-            rusqlite::params![path_str.as_ref(), file_size],
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                path_str.as_ref(),
+                file_size,
+                title,
+                artist,
+                album,
+                genre,
+                duration
+            ],
         )?;
 
         self.conn.query_row(

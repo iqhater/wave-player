@@ -23,6 +23,17 @@ pub struct Track {
     pub created_at: String,
 }
 
+// DTO
+#[derive(Clone, Debug, PartialEq)]
+pub struct TrackData {
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub genre: Option<String>,
+    /// Длительность в миллисекундах.
+    pub duration: i64,
+}
+
 /// Избранное.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Favorites {

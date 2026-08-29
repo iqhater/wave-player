@@ -8,7 +8,7 @@ use rodio::{DeviceSinkBuilder, Player};
 
 use crate::backend::commands::{dispatch, playback};
 use crate::backend::state::AudioState;
-use crate::shared::command_types::PlayerCommand;
+use crate::shared::command_types::{PlayerCommand, StoreCommand};
 use crate::shared::event_types::{AudioError, ErrorSender, StatusSender};
 
 /// Runs the second-generation audio engine.
@@ -19,6 +19,7 @@ pub fn run_audio_loop_v2(
     cmd_rx: flume::Receiver<PlayerCommand>,
     playback_progress: Arc<AtomicU32>,
     status_tx: StatusSender,
+    store_cmd_tx: flume::Sender<StoreCommand>,
     error_tx: ErrorSender,
 ) -> Result<(), Box<dyn Error>> {
     thread::spawn(move || {
@@ -32,7 +33,8 @@ pub fn run_audio_loop_v2(
 
         let player = Player::connect_new(&sink_handle.mixer());
 
-        let mut state = AudioState::new(player, playback_progress, status_tx, error_tx);
+        let mut state =
+            AudioState::new(player, playback_progress, status_tx, store_cmd_tx, error_tx);
 
         loop {
             if let Err(error) = playback::tick(&mut state) {

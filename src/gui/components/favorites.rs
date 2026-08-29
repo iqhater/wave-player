@@ -1,7 +1,11 @@
 use super::player_controls::ControlIconButton;
+use std::time::Duration;
+
 use crate::PlayerContext;
 use crate::shared::command_types::StoreCommand;
 use crate::shared::event_types::{PlayerEvent, StoreEvent};
+use crate::shared::store_types::TrackData;
+
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use std::path::PathBuf;
@@ -14,13 +18,24 @@ pub fn FavoritesButton() -> Element {
     let mut current_track_id = use_signal(|| None::<i64>);
     let mut is_favorite = use_signal(|| false);
 
+    // track  metadata
+    let mut title = use_signal(|| "".to_string());
+    let mut artist = use_signal(|| "".to_string());
+    let mut album = use_signal(|| "".to_string());
+    let mut genre = use_signal(|| "".to_string());
+    let mut duration = use_signal(|| Duration::ZERO);
+
     // Получаем путь текущего трека из PlayerEvent::Started.
     use_future(move || {
         let mut status_rx = ctx.status_rx.read().clone();
 
         async move {
             while let Some(event) = status_rx.next().await {
-                if let PlayerEvent::Started { metadata, .. } = event {
+                if let PlayerEvent::Started {
+                    duration: d,
+                    metadata,
+                } = event
+                {
                     let path = PathBuf::from(metadata.track_path);
 
                     current_path.set(Some(path));
@@ -28,6 +43,13 @@ pub fn FavoritesButton() -> Element {
                     // До ответа базы состояние неизвестно.
                     current_track_id.set(None);
                     is_favorite.set(false);
+
+                    // set metadata
+                    title.set(metadata.title);
+                    artist.set(metadata.artist);
+                    album.set(metadata.album);
+                    genre.set(metadata.genre);
+                    duration.set(d);
 
                     // Запрашиваем актуальное избранное для нового трека.
                     let _ = ctx.store_cmd_tx.read().send(StoreCommand::GetFavorites);
@@ -99,10 +121,34 @@ pub fn FavoritesButton() -> Element {
 
                     is_favorite.set(true);
 
+                    let track_data = TrackData {
+                        title: title(),
+                        artist: artist(),
+                        album: {
+                            let value = album();
+
+                            if value.is_empty() {
+                                None
+                            } else {
+                                Some(value)
+                            }
+                        },
+                        genre: {
+                            let value = genre();
+
+                            if value.is_empty() {
+                                None
+                            } else {
+                                Some(value)
+                            }
+                        },
+                        duration: i64::try_from(duration().as_millis()).unwrap_or(i64::MAX),
+                    };
+
                     let _ = ctx
                         .store_cmd_tx
                         .read()
-                        .send(StoreCommand::AddToFavorites { path });
+                        .send(StoreCommand::AddToFavorites { path, track_data });
                 }
             },
         }

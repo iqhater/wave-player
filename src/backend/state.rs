@@ -1,4 +1,6 @@
+use crate::shared::command_types::StoreCommand;
 use crate::shared::event_types::{ErrorSender, StatusSender};
+
 use rodio::Player;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,6 +17,7 @@ pub(crate) struct AudioState {
     pub(crate) loop_state: LoopState,
 
     pub(crate) status_tx: StatusSender,
+    pub(crate) store_cmd_tx: flume::Sender<StoreCommand>,
     pub(crate) error_tx: ErrorSender,
 }
 
@@ -23,6 +26,7 @@ impl AudioState {
         player: Player,
         playback_progress: Arc<AtomicU32>,
         status_tx: StatusSender,
+        store_cmd_tx: flume::Sender<StoreCommand>,
         error_tx: ErrorSender,
     ) -> Self {
         Self {
@@ -34,6 +38,7 @@ impl AudioState {
             loop_state: LoopState::new(),
 
             status_tx,
+            store_cmd_tx,
             error_tx,
         }
     }

@@ -1,4 +1,4 @@
-use super::store_types::AppConfig;
+use super::store_types::{AppConfig, TrackData};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -37,6 +37,9 @@ pub enum PlayerCommand {
     SetStereoWidth(f32),
     /// Панорама `-1.0..1.0` (центр `0.0`).
     SetPan(f32),
+
+    /// Get player state for different screens
+    RequestState,
 }
 
 /// UI → Store: команды на сохранение/чтение. Отдельный канал, не трогает движок.
@@ -51,6 +54,14 @@ pub enum StoreCommand {
         path: PathBuf,
         duration_secs: f32,
     },
+
+    /// Обновить анализ трека (BPM, ключ).
+    UpdateTrackAnalysis {
+        path: PathBuf,
+        bpm: f32,
+        key: String,
+    },
+
     /// Изменить настройку приложения.
     SetConfig(AppConfig),
     /// Запросить снапшот (при старте UI).
@@ -59,6 +70,7 @@ pub enum StoreCommand {
     // Favorites
     AddToFavorites {
         path: PathBuf,
+        track_data: TrackData,
     },
     RemoveFromFavorites {
         track_id: i64,

@@ -28,24 +28,26 @@ pub(crate) fn dispatch(
         }
 
         // Favorites
-        StoreCommand::AddToFavorites { path } => match db.add_favorite(&path) {
-            Ok(track_id) => {
-                match store_tx.try_broadcast(StoreEvent::FavoritesChanged {
-                    track_id,
-                    is_favorite: true,
-                }) {
-                    Ok(_) => {
-                        println!("backend: favorite added, track_id={track_id}");
-                    }
-                    Err(error) => {
-                        eprintln!("backend: failed to broadcast favorite addition: {error:?}");
+        StoreCommand::AddToFavorites { path, track_data } => {
+            match db.add_favorite(&path, &track_data) {
+                Ok(track_id) => {
+                    match store_tx.try_broadcast(StoreEvent::FavoritesChanged {
+                        track_id,
+                        is_favorite: true,
+                    }) {
+                        Ok(_) => {
+                            println!("backend: favorite added, track_id={track_id}");
+                        }
+                        Err(error) => {
+                            eprintln!("backend: failed to broadcast favorite addition: {error:?}");
+                        }
                     }
                 }
+                Err(error) => {
+                    eprintln!("failed to add track to favorites: {error}");
+                }
             }
-            Err(error) => {
-                eprintln!("failed to add track to favorites: {error}");
-            }
-        },
+        }
 
         StoreCommand::RemoveFromFavorites { track_id } => match db.remove_favorite(track_id) {
             Ok(()) => {
@@ -79,6 +81,12 @@ pub(crate) fn dispatch(
                 Err(error) => {
                     eprintln!("backend: failed to broadcast FavoritesLoaded: {error:?}");
                 }
+            }
+        }
+
+        StoreCommand::UpdateTrackAnalysis { path, bpm, key } => {
+            if let Err(error) = db.update_track_analysis(&path, bpm, &key) {
+                eprintln!("failed to update analysis for {}: {error}", path.display());
             }
         }
 

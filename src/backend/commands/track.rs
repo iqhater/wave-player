@@ -12,6 +12,7 @@ use crate::backend::analysis::waveform::stream_waveform;
 use crate::backend::decoder::{build_audio_pipeline, load_samples_mono, open_file_with_decoder};
 use crate::backend::metadata::parse_track_metadata;
 use crate::backend::state::AudioState;
+use crate::shared::command_types::StoreCommand;
 use crate::shared::event_types::{AudioError, PlayerEvent};
 
 /// Loads a track, builds the audio pipeline and starts playback.
@@ -29,6 +30,7 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
     let decoder = open_file_with_decoder(path_ref)?;
 
     let duration = decoder.total_duration().unwrap_or(Duration::ZERO);
+    println!("Duration {:?}", duration);
 
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
@@ -63,7 +65,7 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
         state,
     );
 
-    start_bpm_analysis(path, state.status_tx.clone());
+    start_bpm_analysis(path, state.status_tx.clone(), state.store_cmd_tx.clone());
 
     Ok(())
 }
@@ -94,7 +96,11 @@ fn start_waveform_analysis(
     );
 }
 
-fn start_bpm_analysis(path: PathBuf, status_tx: crate::shared::event_types::StatusSender) {
+fn start_bpm_analysis(
+    path: PathBuf,
+    status_tx: crate::shared::event_types::StatusSender,
+    store_cmd_tx: flume::Sender<StoreCommand>,
+) {
     std::thread::spawn(move || {
         let Ok((samples, sample_rate, _duration)) = load_samples_mono(&path, 90) else {
             return;
@@ -103,6 +109,12 @@ fn start_bpm_analysis(path: PathBuf, status_tx: crate::shared::event_types::Stat
         let Ok(result) = analyze_bpm_key(&samples, sample_rate, 1) else {
             return;
         };
+
+        let _ = store_cmd_tx.send(StoreCommand::UpdateTrackAnalysis {
+            path: path.clone(),
+            bpm: result.bpm,
+            key: result.key_name.clone(),
+        });
 
         let _ = status_tx.try_broadcast(PlayerEvent::BpmKeyDetected {
             bpm: result.bpm,

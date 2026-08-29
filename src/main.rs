@@ -86,7 +86,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     status_tx.set_overflow(true);
     error_tx.set_overflow(true);
 
-    run_audio_loop_v2(cmd_rx, playback_progress.clone(), status_tx, error_tx).unwrap();
+    let store_cmd_tx = store_tx.clone();
+
+    run_audio_loop_v2(
+        cmd_rx,
+        playback_progress.clone(),
+        status_tx,
+        store_cmd_tx,
+        error_tx,
+    )
+    .unwrap();
 
     let owner = SyncStorage::owner();
 

@@ -68,6 +68,12 @@ pub fn RootLayout() -> Element {
         }
     });
 
+    let content_width_class = if matches!(route, Route::Favorites) {
+        "w-full max-w-[1250px]"
+    } else {
+        "w-full max-w-[600px]"
+    };
+
     rsx! {
 
         document::Link { rel: "icon", href: FAVICON }
@@ -94,7 +100,7 @@ pub fn RootLayout() -> Element {
                 Sidebar {}
 
                 main { class: "flex-grow flex flex-col items-center justify-center relative bg-surface p-container-padding overflow-y-auto",
-                    div { class: "w-full max-w-[600px] flex flex-col items-center gap-8",
+                    div { class: "{content_width_class} flex flex-col items-center gap-8",
 
                         // Router paste here: Home, Recents, Favorites or Settings
                         Outlet::<Route> {}

@@ -1,10 +1,14 @@
 use audiotags::Tag;
 use std::path::Path;
+use std::time::Duration;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrackMetadata {
     pub artist: String,
     pub title: String,
+    pub album: String,
+    pub genre: String,
+    // pub duration: u64,
     /// JPEG bytes for album cover, or empty Vec if no cover
     pub cover: Vec<u8>,
     pub track_path: String,
@@ -21,6 +25,13 @@ pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
             .map(|s| s.to_string())
             .filter(|s| !s.is_empty());
 
+        let album = tag
+            .album_title()
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+
+        let genre = tag.genre().map(|s| s.to_string()).filter(|s| !s.is_empty());
+
         let cover = tag
             .album_cover()
             .map(|pic| pic.data.to_vec())
@@ -31,6 +42,9 @@ pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
             return TrackMetadata {
                 artist: a,
                 title: t,
+                album: album.unwrap_or("".to_string()),
+                genre: genre.unwrap_or("".to_string()),
+                // duration: duration,
                 cover,
                 track_path: path.to_string_lossy().into_owned(),
             };
@@ -48,6 +62,9 @@ pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
         return TrackMetadata {
             artist: artist.unwrap_or(parsed_artist),
             title: title.unwrap_or(parsed_title),
+            album: album.unwrap_or("".to_string()),
+            genre: genre.unwrap_or("".to_string()),
+            // duration: duration,
             cover,
             track_path: path.to_string_lossy().into_owned(),
         };
@@ -65,6 +82,9 @@ pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
     TrackMetadata {
         artist,
         title,
+        album: "".to_string(),
+        genre: "".to_string(),
+        // duration: 0,
         cover: vec![],
         track_path: path.to_string_lossy().into_owned(),
     }
