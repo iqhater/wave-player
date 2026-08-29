@@ -500,7 +500,7 @@ fn VolumeControl() -> Element {
 
                     // Popup регулятора громкости
                     div {
-                        class: "absolute bottom-full right-0 z-50 mb-3
+                        class: "absolute bottom-full right-0 z-50 mb-1
                                 flex h-36 w-10 flex-col items-center justify-center
                                 gap-1 rounded-xl bg-surface-container-high
                                 p-1.5 shadow-lg",
