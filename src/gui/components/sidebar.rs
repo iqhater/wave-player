@@ -163,7 +163,7 @@ pub fn Sidebar() -> Element {
             if !collapsed() {
                 div {
                     class: "mt-auto p-4 bg-primary rounded-2xl text-surface \
-                            border border-outline/10 shadow-lg max-w-[200px]",
+                            border border-outline/10 shadow-lg",
 
                     p {
                         class: "text-[10px] text-on-surface font-medium mb-1 \
