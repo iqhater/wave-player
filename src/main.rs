@@ -20,7 +20,7 @@ use shared::command_types::StoreCommand;
 use shared::event_types::{AudioError, PlayerEvent, StoreEvent};
 
 use dioxus::desktop::tao::dpi::{LogicalSize, PhysicalPosition, Position};
-use dioxus::desktop::tao::window::WindowBuilder;
+use dioxus::desktop::tao::window::{Icon, WindowBuilder};
 use dioxus::prelude::*;
 use generational_box::*;
 
@@ -55,11 +55,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let x: u32 = config.window.width.unwrap_or(1320);
     let y: u32 = config.window.height.unwrap_or(1040);
 
+    // prepare window icon
+    let image = image::load_from_memory(include_bytes!("../assets/icon.png"))
+        .expect("failed to load window icon")
+        .into_rgba8();
+
+    let icon_width = image.width();
+    let icon_height = image.height();
+
+    let window_icon = Icon::from_rgba(image.into_raw(), icon_width, icon_height)
+        .expect("failed to create window icon");
+
     let window = WindowBuilder::new()
         .with_title(format!(
             "Wave Player. Version: {}",
             crate::shared::APP_VERSION
         ))
+        .with_window_icon(Some(window_icon))
         .with_inner_size(LogicalSize::new(x, y))
         .with_position(Position::new(PhysicalPosition::new(
             (3840 - x) / 3,

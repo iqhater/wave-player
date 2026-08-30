@@ -12,7 +12,7 @@ use crate::shared::event_types::StoreEvent;
 use futures_util::StreamExt;
 
 // Geist link "https://fonts.googleapis.com/css2?family=Geist:wght@100;300;400;500;600;700;800;900&display=swap"
-static FAVICON: Asset = asset!("/assets/favicon.png");
+static FAVICON: Asset = asset!("/assets/icon.png");
 // static TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 // static GOOGLE_FONTS_GEIST_LINK: &str = "https://fonts.googleapis.com/css2?family=Geist:wght@100;300;400;500;600;700;800;900&display=swap";
 // static MATERIAL_SYMBOLS_OUTLINED_LINK: &str = "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap";

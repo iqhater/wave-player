@@ -31,7 +31,7 @@ preprocess = "tailwindcss -i ./input.css -o ./assets/tailwind.css --minify"
 [bundle]
 identifier = "dev.waveplayer"
 publisher = "iqhater"
-icon = ["assets/favicon.png"]
+icon = ["assets/icon.png"]
 
 
 # Запускается один раз перед сборкой проекта (dx build)
