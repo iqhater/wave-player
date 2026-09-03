@@ -60,7 +60,7 @@ pub struct AppConfig {
     /// Параметры аудио-движка.
     pub audio: AudioConfig,
     /// Поведение интерфейса (страница Settings).
-    pub interface: InterfaceConfig,
+    pub ui: UiConfig,
 }
 
 // ===== Окно =====
@@ -125,11 +125,25 @@ impl Default for AudioConfig {
 }
 
 // ===== Поведение интерфейса =====
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct InterfaceConfig {
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UiConfig {
     pub timeline_cursor_follows_loop: bool,
     pub show_time_markers: bool,
     pub loop_repeat_region: bool,
     pub timeline_progress_view: bool,
+    pub show_beat_grid: bool,
+    pub beat_grid_snap: bool,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            timeline_cursor_follows_loop: false,
+            show_time_markers: true,
+            loop_repeat_region: true,
+            timeline_progress_view: false,
+            show_beat_grid: true,
+            beat_grid_snap: true,
+        }
+    }
 }

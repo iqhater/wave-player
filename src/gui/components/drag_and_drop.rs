@@ -1,7 +1,9 @@
+use super::open_file::OpenFile;
 use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 use dioxus::prelude::*;
 
+#[cfg(not(target_os = "android"))]
 #[component]
 pub fn DragAndDropFile(is_dragover_event: Signal<bool>) -> Element {
     let ctx = use_context::<PlayerContext>();
@@ -76,6 +78,23 @@ pub fn DragAndDropFile(is_dragover_event: Signal<bool>) -> Element {
 
                     "mp3, wav, flac, ogg, m4a, aac"
                 }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+#[component]
+pub fn DragAndDropFile(is_dragover_event: Signal<bool>) -> Element {
+    let _ = is_dragover_event;
+
+    rsx! {
+        div {
+            class: "flex items-center justify-center rounded-2xl \
+                    border-2 border-dashed border-outline/60 p-4",
+
+            OpenFile {
+                compact: false
             }
         }
     }

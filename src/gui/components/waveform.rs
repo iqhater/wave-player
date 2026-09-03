@@ -9,6 +9,7 @@ use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::PlayerEvent;
 
+use crate::gui::layout::{BeatGridSnap, LoopRepeatRegion, ShowBeatGrid, ShowTimeMarkers};
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use std::sync::atomic::Ordering;
@@ -19,6 +20,14 @@ pub fn Waveform() -> Element {
     let ctx = use_context::<PlayerContext>();
     // let cmd_tx = ctx.command_tx;
     // let init_playback = ctx.playback_progress.read().clone();
+
+    // Grid settings
+    let show_grid = use_context::<ShowBeatGrid>().0;
+    let grid_snap = use_context::<BeatGridSnap>().0;
+
+    // Timeline settings & loop
+    let show_time_markers = use_context::<ShowTimeMarkers>().0;
+    let is_loop_enabled = use_context::<LoopRepeatRegion>().0;
 
     // Read reactive state from context
     let mut position_secs = use_signal(|| 0.0);
@@ -246,12 +255,14 @@ pub fn Waveform() -> Element {
 
             if has_track() {
                 // Loop Player component
-                LoopPlayer { total_duration: dur },
+                if is_loop_enabled() {
+                    LoopPlayer { total_duration: dur },
+                }
             }
 
             div {
                 class: "relative flex h-28 w-full min-w-0
-                            items-center overflow-hidden
+                            items-center overflow-visible
                             rounded-2xl neumorph-sunken
                             hover:shadow",
                 onmounted: move |el| {
@@ -299,7 +310,7 @@ pub fn Waveform() -> Element {
                                     : d.duration * pct;
 
                             const snappedSecs =
-                                window.snapToGrid
+                                d.gridEnabled && d.gridSnapEnabled && window.snapToGrid
                                     ? window.snapToGrid(rawSecs)
                                     : rawSecs;
 
@@ -311,6 +322,8 @@ pub fn Waveform() -> Element {
                             let _ = snap_eval.send(serde_json::json!({
                                 "x": element_x,
                                 "duration": duration_secs(),
+                                "gridEnabled": show_grid(),
+                                "gridSnapEnabled": grid_snap(),
                             }));
                             if let Ok(serde_json::Value::Number(s)) = snap_eval.recv().await {
                                 if let Some(secs) = s.as_f64() {
@@ -388,10 +401,15 @@ pub fn Waveform() -> Element {
                     WaveformBinsCanvas { total_duration: duration_secs, cursor_progress }
 
                     // TODO: fix gird zoom and calcualtions
-                    BeatGrid { total_duration: duration_secs, snap_enabled: true }
+                    if show_grid() {
+                        BeatGrid {
+                            total_duration: duration_secs,
+                            snap_enabled: grid_snap,
+                        }
+                    }
 
                     // Timeline cursor
-                    div { class: "absolute top-0 bottom-0 flex items-center justify-center z-25 cursor-grab hover:scale-105 duration-20 ease-linear pointer-events-none",
+                    div { class: "absolute top-0 bottom-0 flex items-center justify-center z-50 cursor-grab hover:scale-105 duration-20 ease-linear pointer-events-none",
                         // style: "left: {cursor_progress}%; transform: translateX(-50%);",
                         style: "left: var(--wave-cursor-pct, {cursor_progress}%); transform: translateX(-50%);",
                         title: "Timeline marker",
@@ -409,7 +427,7 @@ pub fn Waveform() -> Element {
                 if let Some(hover_progress) = hover_cursor_progress {
                     if let Some(hover_position) = hover_position_secs() {
                         div {
-                            class: "absolute top-0 bottom-0 flex items-center justify-center z-24 pointer-events-none opacity-45",
+                            class: "absolute top-0 bottom-0 flex items-center justify-center z-50 pointer-events-none opacity-45",
                             style: "left: {hover_progress}%; transform: translateX(-50%);",
                             title: "Preview position",
 
@@ -434,23 +452,25 @@ pub fn Waveform() -> Element {
 
             if has_track() {
                 // Time scale
-                div { class: "relative mt-1 h-6 w-full min-w-0
-                            select-none overflow-hidden",
-                    {time_marks.into_iter().map(|(pct, label)| {
-                        rsx! {
-                            div {
-                                class: "absolute top-0 flex max-w-[25%]
-                                        flex-col items-center overflow-hidden",
-                                style: "left: {pct}%; transform: translateX(-50%);",
-                                div { class: "w-[1px] h-1.5 bg-secondary/40" }
-                                span {
-                                    class: "mt-0.5 max-w-full truncate
+                if show_time_markers() {
+                    div { class: "relative mt-1 h-6 w-full min-w-0
+                            select-none overflow-visible",
+                        {time_marks.into_iter().map(|(pct, label)| {
+                            rsx! {
+                                div {
+                                    class: "absolute top-0 flex
+                                        flex-col items-center",
+                                    style: "left: {pct}%; transform: translateX(-50%);",
+                                    div { class: "w-[1px] h-1.5 bg-secondary/40" }
+                                    span {
+                                        class: "mt-0.5 max-w-full truncate
                                             whitespace-nowrap text-[12px] text-secondary/60",
-                                    "{label}"
+                                        "{label}"
+                                    }
                                 }
                             }
-                        }
-                    })}
+                        })}
+                    }
                 }
             }
         }

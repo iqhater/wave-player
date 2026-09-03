@@ -12,12 +12,13 @@ rodio-wsola = { version = "0.2.0" } # for pitch preserving with speed change
 timestretch = "0.13.0" # for pitch preserving with speed change
 hound = "3.5.1" # audio??
 math-iir-fir = "0.5.15" # biquad LP/HP filters
-dioxus = { version = "0.7.10", features = ["desktop", "router"] } # main ui framework
+# dioxus = { version = "0.7.10", features = ["desktop", "router"] } # main ui framework
+dioxus = { version = "0.7.10", default-features = false, features = ["lib", "launch", "router"] } # main ui framework
 # web-sys = "0.3.104" # Raw bindings to Web APIs
 generational-box = "0.7.9" # dioxus extension for clone and copy signals without .clone() struggling at ui components
 flume = "0.12.0" # stream channels for commands from ui to engine
 tokio = { version = "1.52.3", features = ["time"] } # ??
-rfd = "0.17.2" # open dialog explorer to read files
+# rfd = "0.17.2" # open dialog explorer to read files
 async-broadcast = "=0.7.2" # event bus broadcasting events from engine to ui
 futures-util = "0.3" # for async reading with async-broadcast
 markdown = "1.0.0" # for policy and terms text
@@ -34,11 +35,18 @@ ebur128 = "0.1.10" # LUFS measure
 thiserror = "2.0.20" # derive macro error handling
 image = { version = "0.25.10", default-features = false, features = ["png"] } # app window favicon
 
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = "0.17.2"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22.4" # JNI Bindings for Rust
+ndk-context = "0.1.1" # API interfacing with the Android platform
 
 [features]
 server = ["dioxus/server"]
 # server = ["dioxus/fullstack", "dioxus/server"]
-default = ["desktop"]
+# default = ["desktop"]
+default = []
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]

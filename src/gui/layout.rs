@@ -22,13 +22,54 @@ static MATERIAL_SYMBOLS_OUTLINED: Asset =
     asset!("/assets/fonts/MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].woff2");
 // static CSS: Asset = asset!("/assets/main.css");
 
+// TODO: collapse into one context?
+#[derive(Clone, Copy)]
+pub struct MobileMenuOpen(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct TimelineCursorFollowsLoop(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct ShowTimeMarkers(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct LoopRepeatRegion(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct TimelineView(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct ShowBeatGrid(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct BeatGridSnap(pub Signal<bool>);
+
 #[component]
 pub fn RootLayout() -> Element {
     let ctx = use_context::<PlayerContext>();
     let route = use_route::<Route>();
 
     let mut mobile_menu_open = use_signal(|| false);
-    use_context_provider(|| mobile_menu_open);
+    use_context_provider(|| MobileMenuOpen(mobile_menu_open));
+
+    // Settings config
+    let mut cursor_follows_loop = use_signal(|| ctx.config.read().ui.timeline_cursor_follows_loop);
+    let mut show_time_markers = use_signal(|| ctx.config.read().ui.show_time_markers);
+    let mut loop_repeat_region = use_signal(|| ctx.config.read().ui.loop_repeat_region);
+    let mut timeline_progress_view = use_signal(|| ctx.config.read().ui.timeline_progress_view);
+    let mut show_beat_grid = use_signal(|| ctx.config.read().ui.show_beat_grid);
+    let mut beat_grid_snap = use_signal(|| ctx.config.read().ui.beat_grid_snap);
+
+    use_context_provider(|| TimelineCursorFollowsLoop(cursor_follows_loop));
+    use_context_provider(|| ShowTimeMarkers(show_time_markers));
+    use_context_provider(|| LoopRepeatRegion(loop_repeat_region));
+    use_context_provider(|| TimelineView(timeline_progress_view));
+    use_context_provider(|| ShowBeatGrid(show_beat_grid));
+    use_context_provider(|| BeatGridSnap(beat_grid_snap));
+
+    // Эти настройки доступны всем дочерним компонентам, включая Settings и Waveform.
+    use_context_provider(|| show_beat_grid);
+    use_context_provider(|| beat_grid_snap);
 
     let hide_controls = matches!(
         route,
@@ -65,6 +106,12 @@ pub fn RootLayout() -> Element {
                         // Записываем через .write()
                         *ctx.config.write() = config.clone();
                         theme.set(Theme::from_pref(config.theme.clone()));
+
+                        let grid_enabled = config.ui.show_beat_grid;
+                        show_beat_grid.set(grid_enabled);
+
+                        // Snap не может быть включён при отключённой сетке.
+                        beat_grid_snap.set(grid_enabled && config.ui.beat_grid_snap);
                     }
                     _ => {}
                 }
@@ -116,9 +163,9 @@ pub fn RootLayout() -> Element {
                 Sidebar {}
 
                 main { class: "relative flex min-w-0 flex-1 flex-col
-                               items-center justify-center
+                               items-center justify-start
                                overflow-y-auto bg-surface
-                               px-4 pb-40 pt-24
+                               px-4 pb-52 pt-24
                                lg:justify-center
                                lg:p-container-padding
                                lg:pb-0",
@@ -146,7 +193,7 @@ pub fn RootLayout() -> Element {
 
 #[component]
 fn MobileHeader() -> Element {
-    let mut mobile_menu_open = use_context::<Signal<bool>>();
+    let mut mobile_menu_open = use_context::<MobileMenuOpen>().0;
 
     rsx! {
         header {

@@ -16,10 +16,12 @@
     "stereo_width": 1.0,
     "pan": 0.0
   },
-  "interface": {
+  "ui": {
     "timeline_cursor_follows_loop": false,
     "show_time_markers": false,
     "loop_repeat_region": false,
-    "timeline_progress_view": false
+    "timeline_progress_view": false,
+    "show_beat_grid": true,
+    "beat_grid_snap": true
   }
 }

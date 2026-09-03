@@ -35,7 +35,7 @@ tasks:
   build:
     silent: true
     cmds:
-      - pnpm build:css && dx build --release
+      - pnpm build:css && dx build --desktop --release
       # - $CARGO_BUILD -o ${BINARY_NAME}_${PLATFORM} $APP_ENTRYPOINT
       - echo "📦 Build Done"
 

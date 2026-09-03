@@ -1,5 +1,10 @@
 /* Run:
+ *
+    Desktop:
     pnpm build:css && dx serve --desktop
+
+    Mobile Android:
+    pnpm build:css && dx serve --android
 */
 mod backend;
 mod gui;
@@ -19,12 +24,16 @@ use shared::command_types::PlayerCommand;
 use shared::command_types::StoreCommand;
 use shared::event_types::{AudioError, PlayerEvent, StoreEvent};
 
+#[cfg(feature = "desktop")]
 use dioxus::desktop::tao::dpi::{LogicalSize, PhysicalPosition, Position};
+
+#[cfg(feature = "desktop")]
 use dioxus::desktop::tao::window::{Icon, WindowBuilder};
 use dioxus::prelude::*;
 use generational_box::*;
 
 // fix of FOUC — Flash of Unstyled Content
+#[cfg(feature = "desktop")]
 const TAILWIND_CSS: &str = include_str!("../assets/tailwind.css");
 
 // Shared audio state accessible from any component
@@ -51,39 +60,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_store = ConfigStore::new(data_dir.join("config.json"));
     let config = config_store.load_with_default();
 
-    // Размер окна из конфига (или дефолт, если не сохранён)
-    let x: u32 = config.window.width.unwrap_or(1320);
-    let y: u32 = config.window.height.unwrap_or(1040);
+    #[cfg(feature = "desktop")]
+    let window = {
+        // Размер окна из конфига (или дефолт, если не сохранён)
+        let x: u32 = config.window.width.unwrap_or(1320);
+        let y: u32 = config.window.height.unwrap_or(1040);
 
-    // prepare window icon
-    let image = image::load_from_memory(include_bytes!("../assets/icon.png"))
-        .expect("failed to load window icon")
-        .into_rgba8();
+        // prepare window icon
+        let image = image::load_from_memory(include_bytes!("../assets/icon.png"))
+            .expect("failed to load window icon")
+            .into_rgba8();
 
-    let icon_width = image.width();
-    let icon_height = image.height();
+        let icon_width = image.width();
+        let icon_height = image.height();
 
-    let window_icon = Icon::from_rgba(image.into_raw(), icon_width, icon_height)
-        .expect("failed to create window icon");
+        let window_icon = Icon::from_rgba(image.into_raw(), icon_width, icon_height)
+            .expect("failed to create window icon");
 
-    let window = WindowBuilder::new()
-        .with_title(format!(
-            "Wave Player. Version: {}",
-            crate::shared::APP_VERSION
-        ))
-        .with_window_icon(Some(window_icon))
-        .with_inner_size(LogicalSize::new(x, y))
-        .with_position(Position::new(PhysicalPosition::new(
-            (3840 - x) / 3,
-            (2160 - y) / 10,
-        )));
+        WindowBuilder::new()
+            .with_title(format!(
+                "Wave Player. Version: {}",
+                crate::shared::APP_VERSION
+            ))
+            .with_window_icon(Some(window_icon))
+            .with_inner_size(LogicalSize::new(x, y))
+            .with_position(Position::new(PhysicalPosition::new(
+                (3840 - x) / 3,
+                (2160 - y) / 10,
+            )))
+    };
 
     // 1. Создаем канал связи для команд ОТ UI К audio engine (backend)
     let (cmd_tx, cmd_rx) = flume::bounded::<PlayerCommand>(32);
 
     // 2. Создаем broadcast каналы для событий ОТ аудио движка К UI.
     let playback_progress = Arc::new(AtomicU32::new(0));
-    let (mut status_tx, status_rx) = broadcast::<PlayerEvent>(24);
+    let (mut status_tx, status_rx) = broadcast::<PlayerEvent>(128);
     let (mut error_tx, error_rx) = broadcast::<AudioError>(10);
 
     // init store communication
@@ -132,7 +144,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // exe_path.pop(); // Удаляем имя самого файла программы из пути, оставляя только папку
     // let cache_dir = exe_path.join("webview_cache");
 
-    // 1. Создаем путь к папке "webview_cache" в корне вашего проекта
+    #[cfg(feature = "desktop")]
+    {
+        let cache_dir = std::env::current_dir()
+            .expect("failed to get current directory")
+            .join("webview_cache");
+
+        dioxus::LaunchBuilder::new()
+            .with_cfg(
+                dioxus::desktop::Config::new()
+                    .with_data_directory(cache_dir)
+                    .with_window(window)
+                    .with_custom_head(format!("<style id=\"app-styles\">{TAILWIND_CSS}</style>")),
+            )
+            .with_context_provider(move || Box::new(player_ctx))
+            .launch(App);
+    }
+
+    #[cfg(feature = "mobile")]
+    {
+        dioxus::LaunchBuilder::new()
+            /* .with_cfg(
+                dioxus::desktop::Config::new()
+                    // .with_data_directory(cache_dir)
+                    // .with_window(window)
+                    .with_custom_head(format!("<style id=\"app-styles\">{TAILWIND_CSS}</style>")),
+            ) */
+            .with_context_provider(move || Box::new(player_ctx))
+            .launch(App);
+    }
+
+    /* // 1. Создаем путь к папке "webview_cache" в корне вашего проекта
     let cache_dir = std::env::current_dir().unwrap().join("webview_cache");
     // let desktop_config = dioxus::desktop::Config::default().with_data_directory(cache_dir);
 
@@ -147,13 +189,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .with_context_provider(move || Box::new(player_ctx))
         .launch(App);
-
+    */
     Ok(())
+}
+
+#[cfg(feature = "desktop")]
+#[component]
+fn PlatformStyles() -> Element {
+    rsx! {}
+}
+
+#[cfg(not(feature = "desktop"))]
+#[component]
+fn PlatformStyles() -> Element {
+    rsx! {
+        document::Stylesheet {
+            href: asset!("/assets/tailwind.css"),
+        }
+    }
 }
 
 #[component]
 fn App() -> Element {
     rsx! {
+        PlatformStyles {}
+
         Router::<Route> {}
     }
 }

@@ -484,3 +484,6 @@ fn open_file_location(path: String) {
         let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
     }
 }
+
+#[cfg(target_os = "android")]
+fn open_file_location(_path: String) {}

@@ -1,4 +1,5 @@
 use super::open_file::OpenFile;
+use crate::gui::layout::MobileMenuOpen;
 use crate::gui::route::Route;
 use dioxus::prelude::*;
 
@@ -6,7 +7,7 @@ use dioxus::prelude::*;
 pub fn Sidebar() -> Element {
     let current_route = use_route::<Route>();
     let mut collapsed = use_signal(|| false);
-    let mut mobile_menu_open = use_context::<Signal<bool>>();
+    let mut mobile_menu_open = use_context::<MobileMenuOpen>().0;
 
     let aside_class = if collapsed() {
         "fixed inset-0 z-50
@@ -245,7 +246,7 @@ fn SidebarButton(
         "w-full gap-4 px-4"
     };
 
-    let mut mobile_menu_open = use_context::<Signal<bool>>();
+    let mut mobile_menu_open = use_context::<MobileMenuOpen>().0;
 
     rsx! {
         Link {

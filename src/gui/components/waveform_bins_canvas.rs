@@ -22,7 +22,7 @@ const WAVEFORM_JS: &str = r#"
 
     let ctx = canvas.getContext("2d");
 
-    let width = canvas.clientWidth || 400;
+    let width = canvas.clientWidth || 600;
     let height = canvas.clientHeight || 72;
     let dpr = window.devicePixelRatio || 1;
 
@@ -298,20 +298,18 @@ const WAVEFORM_JS: &str = r#"
         const step =
             width / visibleBins;
 
-        let gap = 2.0;
+        let gap;
 
-        if (visibleBins <= 100) {
-            gap = 3.0;
-        } else if (visibleBins <= 300) {
+        if (step >= 4.0) {
             gap = 1.5;
-        } else if (visibleBins <= 600) {
+        } else if (step >= 2.0) {
             gap = 1.0;
         } else {
-            gap = 0.5;
+            gap = 0.65;
         }
 
         const barWidth =
-            Math.max(1.0, step - gap);
+            Math.max(0.8, step - gap);
 
         const firstBin =
             Math.max(0, Math.floor(startPosition));
@@ -320,6 +318,16 @@ const WAVEFORM_JS: &str = r#"
             Math.min(totalBins, Math.ceil(endPosition));
 
         let isAnimationDone = true;
+
+        // Central horizontal line
+        /* ctx.save();
+        ctx.strokeStyle = "rgba(165, 196, 196, 0.18)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+        ctx.restore(); */
 
         for (let i = 0; i < totalBins; i++) {
             const target =
@@ -344,8 +352,11 @@ const WAVEFORM_JS: &str = r#"
             const current =
                 window.animatedPeaks[i] || 0;
 
+            const normalizedPeak =
+                Math.pow(Math.max(0.02, current), 0.85);
+
             const barHeight =
-                Math.max(0.06, current) * height;
+                Math.max(2.0, normalizedPeak * height);
 
             /*
              * Позиция учитывает дробный startPosition.
@@ -365,6 +376,14 @@ const WAVEFORM_JS: &str = r#"
                 ctx.fillStyle =
                     "rgba(196, 200, 192, 1)";
             }
+
+            /* More contrast bars color
+                if ((i / totalBins) <= progress) {
+                    ctx.fillStyle = "rgba(110, 165, 165, 0.95)";
+                } else {
+                    ctx.fillStyle = "rgba(205, 210, 204, 0.78)";
+                }
+            */
 
             ctx.beginPath();
 
