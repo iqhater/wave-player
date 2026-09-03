@@ -18,7 +18,7 @@ pub fn DragAndDropFile(is_dragover_event: Signal<bool>) -> Element {
         if is_dragover_event() {
             div {
                 class: "absolute inset-0 z-10 flex flex-col
-                        items-center justify-center gap-2
+                        items-center justify-center gap-1
                         select-none cursor-pointer
                         rounded-2xl border-2 border-dashed
                         pointer-events-auto
@@ -60,9 +60,12 @@ pub fn DragAndDropFile(is_dragover_event: Signal<bool>) -> Element {
                 span {
                     class: "hidden text-sm font-medium
                             text-primary/90
+                            text-center
                             lg:block",
 
-                    "Drag & Drop an audio file here or click to browse"
+                    "Drag & Drop an audio file here"
+                    br {}
+                    "or click to browse"
                 }
 
                 span {

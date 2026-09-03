@@ -8,7 +8,8 @@ use crate::shared::store_types::Track;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 
-const FAVORITES_GRID_COLUMNS: &str = "grid-cols-[40px_48px_minmax(180px,2fr)_minmax(140px,1.5fr)_minmax(120px,1.5fr)_72px_72px_72px_72px_40px]";
+const FAVORITES_GRID_COLUMNS: &str = "grid-cols-[40px_48px_minmax(0,1fr)_minmax(0,1fr)_40px] \
+     md:grid-cols-[40px_48px_minmax(180px,2fr)_minmax(140px,1.5fr)_minmax(120px,1.5fr)_72px_72px_72px_72px_40px]";
 
 #[component]
 pub fn Favorites() -> Element {
@@ -129,13 +130,41 @@ pub fn Favorites() -> Element {
 
                 div {}
                 div {}
-                div { "Title" }
-                div { "Artist" }
-                div { "Album" }
-                div { class: "text-center", "BPM" }
-                div { class: "text-center", "Key" }
-                div { class: "text-center", "Plays" }
-                div { class: "text-center", "Duration" }
+
+                div {
+                    class: "min-w-0",
+                    "Title"
+                }
+
+                div {
+                    class: "min-w-0",
+                    "Artist"
+                }
+
+                div {
+                    class: "hidden md:block",
+                    "Album"
+                }
+
+                div {
+                    class: "hidden md:block text-center",
+                    "BPM"
+                }
+
+                div {
+                    class: "hidden md:block text-center",
+                    "Key"
+                }
+
+                div {
+                    class: "hidden md:block text-center",
+                    "Plays"
+                }
+
+                div {
+                    class: "hidden md:block text-center",
+                    "Duration"
+                }
                 div {}
             }
 
@@ -235,7 +264,7 @@ fn FavoriteTrackRow(
 
     rsx! {
         div {
-            class: "w-full grid {FAVORITES_GRID_COLUMNS} items-center divide-x divide-outline-variant/50 gap-2 px-3 py-1 rounded-2xl neumorph-raised",
+            class: "w-full min-w-0 grid {FAVORITES_GRID_COLUMNS} items-center divide-x divide-outline-variant/50 gap-2 px-3 py-1 rounded-2xl neumorph-raised",
 
             // Кнопка воспроизведения.
             button {
@@ -273,7 +302,7 @@ fn FavoriteTrackRow(
 
             // Название.
             div {
-                class: "min-w-0",
+                class: "min-w-0 overflow-hidden",
 
                 p {
                     class: "truncate font-small",
@@ -284,39 +313,39 @@ fn FavoriteTrackRow(
 
             // Исполнитель.
             div {
-                class: "min-w-0 truncate text-secondary text-sm",
+                class: "min-w-0 overflow-hidden truncate text-secondary text-sm",
                 title: "{track.artist}",
                 "{track.artist}"
             }
 
             // Альбом.
             div {
-                class: "min-w-0 truncate text-secondary opacity-70 text-sm",
+                class: "hidden md:block min-w-0 truncate text-secondary opacity-70 text-sm",
                 title: "{album}",
                 "{album}"
             }
 
             // BPM.
             div {
-                class: "text-center text-sm",
+                class: "hidden md:block text-center text-sm",
                 "{bpm}"
             }
 
             // Тональность.
             div {
-                class: "text-center text-sm",
+                class: "hidden md:block text-center text-sm",
                 "{key}"
             }
 
             // Количество прослушиваний.
             div {
-                class: "text-center text-sm",
+                class: "hidden md:block text-center text-sm",
                 "{track.play_count}"
             }
 
             // Длительность.
             div {
-                class: "text-center text-secondary text-sm",
+                class: "hidden md:block text-center text-secondary text-sm",
                 "{duration}"
             }
 
