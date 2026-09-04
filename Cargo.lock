@@ -7017,6 +7017,7 @@ dependencies = [
  "async-broadcast",
  "audiotags",
  "base64 0.23.0",
+ "chrono",
  "dioxus",
  "ebur128",
  "embed-resource",

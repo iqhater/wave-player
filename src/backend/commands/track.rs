@@ -14,6 +14,7 @@ use crate::backend::metadata::parse_track_metadata;
 use crate::backend::state::AudioState;
 use crate::shared::command_types::StoreCommand;
 use crate::shared::event_types::{AudioError, PlayerEvent};
+use crate::shared::store_types::TrackData;
 
 /// Loads a track, builds the audio pipeline and starts playback.
 pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), AudioError> {
@@ -54,6 +55,19 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
     state.player.play();
 
     let metadata = parse_track_metadata(path_ref);
+
+    let track_data = TrackData {
+        title: metadata.title.clone(),
+        artist: metadata.artist.clone(),
+        album: (!metadata.album.is_empty()).then(|| metadata.album.clone()),
+        genre: (!metadata.genre.is_empty()).then(|| metadata.genre.clone()),
+        duration: duration.as_millis() as i64,
+    };
+
+    let _ = state.store_cmd_tx.send(StoreCommand::RecordRecentTrack {
+        path: path.clone(),
+        track_data,
+    });
 
     let _ = state
         .status_tx

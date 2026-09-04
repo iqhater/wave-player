@@ -34,6 +34,7 @@ include_dir = "0.7.4" # include directory for migrations
 ebur128 = "0.1.10" # LUFS measure
 thiserror = "2.0.20" # derive macro error handling
 image = { version = "0.25.10", default-features = false, features = ["png"] } # app window favicon
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] } # convert uc to local pc time
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rfd = "0.17.2"

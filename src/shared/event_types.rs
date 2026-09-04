@@ -1,5 +1,5 @@
 use crate::backend::metadata::TrackMetadata;
-use crate::shared::store_types::{AppConfig, HistoryEntry, Track};
+use crate::shared::store_types::{AppConfig, RecentTrack, Track};
 use std::path::PathBuf;
 
 use async_broadcast::Sender as BroadcastSender;
@@ -121,6 +121,15 @@ pub enum StoreEvent {
     TrackPlaysCountUpdated {
         path: PathBuf,
         count: u64,
+    },
+
+    RecentTracksLoaded {
+        tracks: Vec<RecentTrack>,
+    },
+
+    RecentTrackChanged {
+        track_id: i64,
+        is_present: bool,
     },
 }
 

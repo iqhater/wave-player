@@ -119,7 +119,7 @@ pub fn RootLayout() -> Element {
         }
     });
 
-    let content_width_class = if matches!(route, Route::Favorites) {
+    let content_width_class = if matches!(route, Route::Favorites | Route::RecentTracks) {
         "w-full max-w-[1250px]"
     } else {
         "w-full max-w-[600px]"

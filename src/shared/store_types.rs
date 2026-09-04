@@ -42,11 +42,13 @@ pub struct Favorites {
     pub track_paths: Vec<PathBuf>,
 }
 
-/// Запись прослушивания (история).
+/// Трек с датой последнего прослушивания.
 #[derive(Clone, Debug, PartialEq)]
-pub struct HistoryEntry {
-    pub track_path: PathBuf,
-    pub listened_at: i64, // unix ts
+pub struct RecentTrack {
+    pub track: Track,
+
+    /// Timestamp SQLite в формате `YYYY-MM-DD HH:MM:SS`.
+    pub played_at: String,
 }
 
 // ===== Настройки приложения (JSON) =====

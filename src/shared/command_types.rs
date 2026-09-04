@@ -76,4 +76,17 @@ pub enum StoreCommand {
         track_id: i64,
     },
     GetFavorites,
+
+    /// Recent tracks
+    /// Записать успешное открытие трека в историю.
+    RecordRecentTrack {
+        path: PathBuf,
+        track_data: TrackData,
+    },
+    /// Получить список недавних треков.
+    GetRecentTracks,
+    /// Удалить трек из истории.
+    RemoveRecentTrack {
+        track_id: i64,
+    },
 }

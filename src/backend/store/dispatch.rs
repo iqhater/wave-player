@@ -25,6 +25,10 @@ pub(crate) fn dispatch(
             let _ = store_tx.broadcast(StoreEvent::FavoritesLoaded {
                 tracks: db.favorites(),
             });
+
+            let _ = store_tx.broadcast(StoreEvent::RecentTracksLoaded {
+                tracks: db.recent_tracks(),
+            });
         }
 
         // Favorites
@@ -117,6 +121,38 @@ pub(crate) fn dispatch(
                     "failed to increment play count for {}: {error}",
                     path.display()
                 );
+            }
+        },
+
+        StoreCommand::RecordRecentTrack { path, track_data } => {
+            match db.record_recent_track(&path, &track_data) {
+                Ok(track_id) => {
+                    let _ = store_tx.try_broadcast(StoreEvent::RecentTrackChanged {
+                        track_id,
+                        is_present: true,
+                    });
+                }
+                Err(error) => {
+                    eprintln!("failed to record recent track {}: {error}", path.display());
+                }
+            }
+        }
+
+        StoreCommand::GetRecentTracks => {
+            let tracks = db.recent_tracks();
+
+            let _ = store_tx.try_broadcast(StoreEvent::RecentTracksLoaded { tracks });
+        }
+
+        StoreCommand::RemoveRecentTrack { track_id } => match db.remove_recent_track(track_id) {
+            Ok(()) => {
+                let _ = store_tx.try_broadcast(StoreEvent::RecentTrackChanged {
+                    track_id,
+                    is_present: false,
+                });
+            }
+            Err(error) => {
+                eprintln!("failed to remove recent track {track_id}: {error}");
             }
         },
 
