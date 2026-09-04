@@ -111,6 +111,12 @@ pub enum StoreEvent {
         track_id: i64,
         is_favorite: bool,
     },
+    /// Анализ трека обновился.
+    TrackAnalysisUpdated {
+        path: PathBuf,
+        bpm: f32,
+        key: String,
+    },
     /// Счётчик прослушиваний обновился.
     TrackPlaysCountUpdated {
         path: PathBuf,

@@ -24,6 +24,8 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
     state.track.is_playing = false;
     state.track.position = Duration::ZERO;
     state.track.started_at = None;
+    state.track.session_listened_time = Duration::ZERO;
+    state.track.play_count_recorded = false;
 
     let path_ref = Path::new(&path);
 

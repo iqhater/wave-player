@@ -155,6 +155,9 @@ pub(crate) fn toggle_repeat(state: &mut AudioState, enabled: bool) -> Result<(),
     Ok(())
 }
 
+/// Play count criteria in percents
+const PLAY_COUNT_THRESHOLD: f32 = 0.60;
+
 fn advance_position(state: &mut AudioState) -> bool {
     let Some(started_at) = state.track.started_at else {
         return false;
@@ -162,6 +165,10 @@ fn advance_position(state: &mut AudioState) -> bool {
 
     let now = Instant::now();
     let elapsed = now.duration_since(started_at);
+
+    // Учитываем именно реальное время.
+    // Скорость воспроизведения здесь намеренно не используется.
+    state.track.session_listened_time += elapsed;
 
     state.track.position = state
         .track
@@ -171,7 +178,31 @@ fn advance_position(state: &mut AudioState) -> bool {
 
     state.track.started_at = Some(now);
 
+    record_play_count_if_needed(state);
+
     true
+}
+
+fn record_play_count_if_needed(state: &mut AudioState) {
+    if state.track.play_count_recorded || state.track.duration.is_zero() {
+        return;
+    }
+
+    let threshold = state.track.duration.mul_f32(PLAY_COUNT_THRESHOLD);
+
+    if state.track.session_listened_time < threshold {
+        return;
+    }
+
+    let Some(path) = state.track.path.clone() else {
+        return;
+    };
+
+    state.track.play_count_recorded = true;
+
+    let _ = state
+        .store_cmd_tx
+        .send(crate::shared::command_types::StoreCommand::SaveTrackPlaysCount { path });
 }
 
 /// Updates the tracked position of the current track.
@@ -403,6 +434,8 @@ fn repeat_from_beginning(state: &mut AudioState) -> Result<(), AudioError> {
     state.track.position = Duration::ZERO;
     state.track.is_playing = true;
     state.track.started_at = Some(Instant::now());
+    state.track.session_listened_time = Duration::ZERO;
+    state.track.play_count_recorded = false;
 
     state.set_progress(Duration::ZERO);
 

@@ -65,6 +65,8 @@ pub(crate) struct TrackState {
     pub is_playing: bool,
     pub started_at: Option<Instant>,
     pub repeat: bool,
+    pub session_listened_time: Duration,
+    pub play_count_recorded: bool,
 }
 
 impl TrackState {
@@ -77,6 +79,8 @@ impl TrackState {
             is_playing: false,
             started_at: None,
             repeat: false,
+            session_listened_time: Duration::ZERO,
+            play_count_recorded: false,
         }
     }
 }

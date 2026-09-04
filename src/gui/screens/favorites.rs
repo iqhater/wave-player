@@ -63,6 +63,24 @@ pub fn Favorites() -> Element {
                         }
                     }
 
+                    StoreEvent::TrackAnalysisUpdated { path, bpm, key } => {
+                        tracks.with_mut(|tracks| {
+                            if let Some(track) = tracks.iter_mut().find(|track| track.path == path)
+                            {
+                                track.bpm = Some(bpm);
+                                track.key = Some(key);
+                            }
+                        });
+                    }
+
+                    StoreEvent::TrackPlaysCountUpdated { path, count } => {
+                        if let Some(track) =
+                            tracks.write().iter_mut().find(|track| track.path == path)
+                        {
+                            track.play_count = count as i64;
+                        }
+                    }
+
                     _ => {}
                 }
             }

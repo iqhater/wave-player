@@ -85,10 +85,40 @@ pub(crate) fn dispatch(
         }
 
         StoreCommand::UpdateTrackAnalysis { path, bpm, key } => {
-            if let Err(error) = db.update_track_analysis(&path, bpm, &key) {
-                eprintln!("failed to update analysis for {}: {error}", path.display());
+            match db.update_track_analysis(&path, bpm, &key) {
+                Ok(true) => {
+                    let _ =
+                        store_tx.try_broadcast(StoreEvent::TrackAnalysisUpdated { path, bpm, key });
+                }
+                Ok(false) => {
+                    eprintln!("track not found: {}", path.display());
+                }
+                Err(error) => {
+                    eprintln!("failed to update track analysis: {error}");
+                }
             }
         }
+
+        StoreCommand::SaveTrackPlaysCount { path } => match db.increment_play_count(&path) {
+            Ok(Some(count)) => {
+                let _ = store_tx.try_broadcast(StoreEvent::TrackPlaysCountUpdated {
+                    path,
+                    count: count as u64,
+                });
+            }
+            Ok(None) => {
+                eprintln!(
+                    "cannot increment play count: track is not stored: {}",
+                    path.display()
+                );
+            }
+            Err(error) => {
+                eprintln!(
+                    "failed to increment play count for {}: {error}",
+                    path.display()
+                );
+            }
+        },
 
         _ => {}
     }

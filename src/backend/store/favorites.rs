@@ -145,4 +145,41 @@ impl DbStore {
             |row| row.get(0),
         )
     }
+
+    pub fn increment_play_count(&mut self, path: &Path) -> rusqlite::Result<Option<i64>> {
+        let path = path.to_string_lossy();
+        let transaction = self.conn.transaction()?;
+
+        let updated = transaction.execute(
+            "UPDATE tracks
+                 SET play_count = play_count + 1
+                 WHERE path = ?1",
+            rusqlite::params![path.as_ref()],
+        )?;
+
+        if updated == 0 {
+            transaction.commit()?;
+            return Ok(None);
+        }
+
+        let (track_id, play_count): (i64, i64) = transaction.query_row(
+            "SELECT id, play_count
+                 FROM tracks
+                 WHERE path = ?1",
+            rusqlite::params![path.as_ref()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+
+        transaction.execute(
+            "INSERT INTO recent_tracks (track_id, played_at)
+                 VALUES (?1, CURRENT_TIMESTAMP)
+                 ON CONFLICT(track_id) DO UPDATE SET
+                     played_at = CURRENT_TIMESTAMP",
+            rusqlite::params![track_id],
+        )?;
+
+        transaction.commit()?;
+
+        Ok(Some(play_count))
+    }
 }
