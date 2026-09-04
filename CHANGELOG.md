@@ -1,3 +1,16 @@
+## [unreleased]
+
+### 🚀 Features
+
+- *(ui)* Add responsive mobile controls
+- *(ui)* Improve responsive audio upload
+- *(mobile)* Improve Android file flow
+
+### 🐛 Bug Fixes
+
+- *(ui)* Adjust updates panel width
+- Set desktop window favicon
+- *(ui)* Fix mobile list and drop text alignment
 ## [0.1.0-alpha.9] - 2026-08-29
 
 ### 🚀 Features
