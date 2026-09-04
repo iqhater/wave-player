@@ -262,7 +262,7 @@ pub fn SettingsCheckbox(
         label {
             id: "{id}",
             class: format!(
-                    "rounded-md text-[16px] text-label-md flex items-start
+                    "rounded-md text-[16px] text-label-md flex items-center
                      hover:bg-primary/10 hover:text-primary cursor-pointer
                      transition-colors select-none whitespace-normal {}",
                     if text.is_empty() {
