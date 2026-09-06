@@ -119,29 +119,14 @@ pub(crate) fn build_audio_pipeline(
 
     let decoder = decoder.amplify_decibel(3.5);
 
-    if state.playback.preserve_pitch {
-        // Decoder → WSOLA → Filters → Spatial
-        // let mut wsola_source = rodio_wsola::Wsola::new(decoder, 1.0);
+    let source = TimeStretchSource::new(
+        decoder,
+        state.playback.speed_shared.clone(),
+        state.playback.preserve_pitch_shared.clone(),
+    )
+    .map_err(|_| AudioError::RenderAudioFailed)?;
 
-        let source = TimeStretchSource::new(decoder, state.playback.speed_shared.clone())
-            .map_err(|_| AudioError::RenderAudioFailed)?;
-
-        append_source(state, source);
-
-        // TimestretchSource controls the speed.
-        // state.player.set_speed(1.0);
-
-        /* let wsola_source = decoder.wsola(state.playback.speed);
-        // wsola_source.set_speed(state.playback.speed);
-        append_source(state, wsola_source);
-
-        // WSOLA controls the playback rate.
-        state.player.set_speed(1.0); */
-    } else {
-        // Decoder → Filters → Spatial
-        let source = decoder.speed(state.playback.speed);
-        append_source(state, source);
-    }
+    append_source(state, source);
 
     Ok(())
 }

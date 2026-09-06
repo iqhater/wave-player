@@ -71,12 +71,9 @@ pub(crate) fn seek(state: &mut AudioState, position: Duration) -> Result<(), Aud
         return seek_with_wsola(state, position);
     }
 
-    let speed = state.playback.speed.max(0.01);
-    let decoder_position = position.div_f32(speed);
-
     state
         .player
-        .try_seek(decoder_position)
+        .try_seek(position)
         .map_err(|_| AudioError::SeekFailed)?;
 
     state.track.position = position;
@@ -130,6 +127,10 @@ pub(crate) fn set_preserve_pitch(state: &mut AudioState, enabled: bool) -> Resul
 
     // let previous_value = state.playback.preserve_pitch;
     state.playback.preserve_pitch = enabled;
+    state
+        .playback
+        .preserve_pitch_shared
+        .store(enabled, Ordering::Release);
 
     // Мгновенно передаем флаг режима в аудио-поток.
     // На следующем блоке источник сам пересоберет внутренний движок!
@@ -214,33 +215,13 @@ fn update_position(state: &mut AudioState) {
 }
 
 pub(crate) fn apply_playback_speed(state: &AudioState) {
-    /* // Просто пишем скорость в атомик. TimeStretchSource сам применит её
-    // либо как изменение темпа (в WideKeylock), либо как скорость ленты (в Tape)
     state
         .playback
         .speed_shared
-        .store(state.playback.speed.to_bits(), Ordering::Relaxed);
+        .store(state.playback.speed.to_bits(), Ordering::Release);
 
-    // Родио ВСЕГДА играет на базовой скорости 1.0. Миксер стабилен.
-    state.player.set_speed(1.0); */
-
-    if state.playback.preserve_pitch {
-        state
-            .playback
-            .speed_shared
-            .store(state.playback.speed.to_bits(), Ordering::Relaxed);
-
-        // TimeStretchSource controls the speed.
-        state.player.set_speed(1.0);
-    } else {
-        state
-            .playback
-            .speed_shared
-            .store(1.0f32.to_bits(), Ordering::Relaxed);
-
-        // Player controls the speed and changes the pitch.
-        state.player.set_speed(state.playback.speed);
-    }
+    // Player не должен дополнительно менять скорость.
+    state.player.set_speed(1.0);
 }
 
 fn reload_track_with_effects(state: &mut AudioState) -> Result<(), AudioError> {
@@ -251,11 +232,12 @@ fn reload_track_with_effects(state: &mut AudioState) -> Result<(), AudioError> {
     let position = state.track.position.min(state.track.duration);
     let was_playing = state.track.is_playing && !state.player.is_paused();
 
-    let source_position = if state.playback.preserve_pitch {
+    /* let source_position = if state.playback.preserve_pitch {
         position
     } else {
         position.div_f32(state.playback.speed.max(0.01))
-    };
+    }; */
+    let source_position = position;
 
     let decoder = open_file_with_decoder(&path)?;
 
