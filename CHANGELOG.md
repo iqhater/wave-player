@@ -2,6 +2,23 @@
 
 ### 🚀 Features
 
+- *(recent)* Add recent tracks list
+
+### 🐛 Bug Fixes
+
+- *(ui)* Align settings checkbox labels
+- *(favorites)* Update track statistics live
+- *(audio)* Preserve speed across mode switches
+- Correct popup behavior and remove some bulk code
+- *(ui)* Preserve player state
+
+### 📚 Documentation
+
+- Update README
+## [0.1.0-alpha.10] - 2026-09-04
+
+### 🚀 Features
+
 - *(ui)* Add responsive mobile controls
 - *(ui)* Improve responsive audio upload
 - *(mobile)* Improve Android file flow
@@ -11,6 +28,10 @@
 - *(ui)* Adjust updates panel width
 - Set desktop window favicon
 - *(ui)* Fix mobile list and drop text alignment
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Bump version to 0.1.0-alpha.10
 ## [0.1.0-alpha.9] - 2026-08-29
 
 ### 🚀 Features
