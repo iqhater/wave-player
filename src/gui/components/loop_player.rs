@@ -1,6 +1,8 @@
 use crate::PlayerContext;
 use crate::PlayerEvent;
+use crate::gui::layout::LoopUIState;
 use crate::shared::command_types::PlayerCommand;
+
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use std::time::Duration;
@@ -8,9 +10,10 @@ use std::time::Duration;
 #[component]
 pub fn LoopPlayer(total_duration: f32) -> Element {
     let ctx = use_context::<PlayerContext>();
+    let loop_state = use_context::<LoopUIState>();
 
-    let mut loop_start = use_signal(|| total_duration * 0.75);
-    let mut loop_end = use_signal(|| (total_duration * 0.85).min(total_duration));
+    let mut loop_start = loop_state.start;
+    let mut loop_end = loop_state.end;
 
     // 2. Делаем пропс реактивным с помощью use_reactive!
     // Как только total_duration изменится, этот эффект гарантированно перезапустится
@@ -42,7 +45,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
     let mut anchor_val = use_signal(|| 0.0f32); // loop_start для L, loop_end для R
     let mut anchor_l = use_signal(|| 0.0f32);
     let mut anchor_r = use_signal(|| 0.0f32);
-    let mut is_loop_enabled = use_signal(|| false);
+    let mut is_loop_enabled = loop_state.enabled;
 
     // Export signals
     let mut export_started = use_signal(|| false);
@@ -73,7 +76,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
     };
 
     use_future(move || {
-        let mut status_rx = ctx.status_rx.read().clone();
+        // Ignore export events emitted before this component was mounted.
+        let mut status_rx = ctx.status_rx.read().new_receiver();
 
         async move {
             while let Some(status) = status_rx.next().await {
@@ -256,6 +260,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| {
                         if !export_started() {
+                            send_set_loop();
+
                             let _ = ctx.command_tx.read().send(
                                 PlayerCommand::ExportLoop(
                                     "exported_loop.wav".to_string(),

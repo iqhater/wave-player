@@ -44,6 +44,21 @@ pub struct ShowBeatGrid(pub Signal<bool>);
 #[derive(Clone, Copy)]
 pub struct BeatGridSnap(pub Signal<bool>);
 
+#[derive(Clone, Copy)]
+pub struct PlaybackUIState {
+    pub position_secs: Signal<f32>,
+    pub duration_secs: Signal<f32>,
+    pub has_track: Signal<bool>,
+    pub is_playing: Signal<bool>,
+}
+
+#[derive(Clone, Copy)]
+pub struct LoopUIState {
+    pub start: Signal<f32>,
+    pub end: Signal<f32>,
+    pub enabled: Signal<bool>,
+}
+
 #[component]
 pub fn RootLayout() -> Element {
     let ctx = use_context::<PlayerContext>();
@@ -75,6 +90,29 @@ pub fn RootLayout() -> Element {
         route,
         Route::TermsOfService | Route::PrivacyPolicy | Route::Changelog
     );
+
+    // loop and timeline cursor state
+    let position_secs = use_signal(|| 0.0_f32);
+    let duration_secs = use_signal(|| 0.0_f32);
+    let has_track = use_signal(|| false);
+    let is_playing = use_signal(|| false);
+
+    let loop_start = use_signal(|| 0.0_f32);
+    let loop_end = use_signal(|| 0.0_f32);
+    let loop_enabled = use_signal(|| false);
+
+    use_context_provider(|| PlaybackUIState {
+        position_secs,
+        duration_secs,
+        has_track,
+        is_playing,
+    });
+
+    use_context_provider(|| LoopUIState {
+        start: loop_start,
+        end: loop_end,
+        enabled: loop_enabled,
+    });
 
     // 1. СРАЗУ читаем сохраненную тему из конфига при старте приложения
     let saved_theme = Theme::from_pref(ctx.config.read().theme.clone());

@@ -9,7 +9,9 @@ use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::PlayerEvent;
 
-use crate::gui::layout::{BeatGridSnap, LoopRepeatRegion, ShowBeatGrid, ShowTimeMarkers};
+use crate::gui::layout::{
+    BeatGridSnap, LoopRepeatRegion, PlaybackUIState, ShowBeatGrid, ShowTimeMarkers,
+};
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use std::sync::atomic::Ordering;
@@ -21,6 +23,8 @@ pub fn Waveform() -> Element {
     // let cmd_tx = ctx.command_tx;
     // let init_playback = ctx.playback_progress.read().clone();
 
+    let playback = use_context::<PlaybackUIState>();
+
     // Grid settings
     let show_grid = use_context::<ShowBeatGrid>().0;
     let grid_snap = use_context::<BeatGridSnap>().0;
@@ -30,14 +34,14 @@ pub fn Waveform() -> Element {
     let is_loop_enabled = use_context::<LoopRepeatRegion>().0;
 
     // Read reactive state from context
-    let mut position_secs = use_signal(|| 0.0);
+    let mut position_secs = playback.position_secs;
     let mut hover_position_secs = use_signal(|| None::<f32>);
 
     /* let mut position_secs = use_signal(move || {
         Duration::from_millis(init_playback.load(Ordering::Relaxed) as u64).as_secs_f32()
     }); */
-    let mut duration_secs = use_signal(|| 0.0);
-    let mut has_track = use_signal(|| false);
+    let mut duration_secs = playback.duration_secs;
+    let mut has_track = playback.has_track;
 
     // let waveform_data = ctx.waveform_data;
 
@@ -122,7 +126,12 @@ pub fn Waveform() -> Element {
     use_future(move || {
         let pos = ctx.playback_progress.read().clone();
         async move {
-            let mut last_position = pos.load(Ordering::Relaxed);
+            let current_position = pos.load(Ordering::Relaxed);
+
+            // Важно для возврата на экран после паузы.
+            position_secs.set(current_position as f32 / 1000.0);
+
+            let mut last_position = current_position;
 
             loop {
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -409,7 +418,7 @@ pub fn Waveform() -> Element {
                     }
 
                     // Timeline cursor
-                    div { class: "absolute top-0 bottom-0 flex items-center justify-center z-50 cursor-grab hover:scale-105 duration-20 ease-linear pointer-events-none",
+                    div { class: "absolute top-0 bottom-0 flex items-center justify-center z-10 cursor-grab hover:scale-105 duration-20 ease-linear pointer-events-none",
                         // style: "left: {cursor_progress}%; transform: translateX(-50%);",
                         style: "left: var(--wave-cursor-pct, {cursor_progress}%); transform: translateX(-50%);",
                         title: "Timeline marker",
@@ -417,7 +426,7 @@ pub fn Waveform() -> Element {
                         div { class: "absolute -top-0 w-2 h-2 rounded-full bg-primary" }
 
                         // Метка времени над курсором
-                        div { class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-50",
+                        div { class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-10",
                             "{format_time(pos as u32)}"
                         }
                     }
@@ -427,7 +436,7 @@ pub fn Waveform() -> Element {
                 if let Some(hover_progress) = hover_cursor_progress {
                     if let Some(hover_position) = hover_position_secs() {
                         div {
-                            class: "absolute top-0 bottom-0 flex items-center justify-center z-50 pointer-events-none opacity-45",
+                            class: "absolute top-0 bottom-0 flex items-center justify-center z-10 pointer-events-none opacity-45",
                             style: "left: {hover_progress}%; transform: translateX(-50%);",
                             title: "Preview position",
 
@@ -440,7 +449,7 @@ pub fn Waveform() -> Element {
                             }
 
                             div {
-                                class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-50",
+                                class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-10",
                                 "{format_time(hover_position as u32)}"
                             }
                         }
