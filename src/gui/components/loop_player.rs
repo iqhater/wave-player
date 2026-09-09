@@ -303,110 +303,112 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                         "laps"
                     }
                 }
+            }
 
-                // Progress pop-up
-                if export_started() {
-                    // Backdrop
-                    div {
-                        class: "pointer-events-auto cursor-default fixed inset-0 z-50 bg-black/30 backdrop-blur-sm",
-                    }
+            // Progress pop-up
+            if export_started() {
+                // Backdrop
+                div {
+                    class: "pointer-events-auto cursor-default fixed inset-0 z-50 bg-black/30 backdrop-blur-sm",
+                    style: "z-index: 100;",
+                }
 
-                     // Progress modal
+                 // Progress modal
+                div {
+                    class: "pointer-events-auto cursor-default fixed p-5 top-1/2 left-[60%] z-60 w-[420px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-outline-variant bg-surface-container-high shadow-2xl",
+                    style: "z-index: 110;",
+
+                    onmousedown: move |evt| {
+                        evt.stop_propagation();
+                    },
+
                     div {
-                        class: "pointer-events-auto cursor-default fixed p-5 top-1/2 left-[60%] z-60 w-[420px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-outline-variant bg-surface-container-high shadow-2xl",
-                        onmousedown: move |evt| {
-                            evt.stop_propagation();
-                        },
+                        class: "flex items-center justify-between gap-3",
 
                         div {
-                            class: "flex items-center justify-between gap-3",
+                            class: "flex items-center gap-2",
 
-                            div {
-                                class: "flex items-center gap-2",
-
-                                span {
-                                    class: "material-symbols-outlined text-primary",
-                                    if exported_path().is_some() {
-                                        "check_circle"
-                                    } else {
-                                        "progress_activity"
-                                    }
-                                }
-
-                                div {
-                                    class: "text-sm font-medium",
-
-                                    if exported_path().is_some() {
-                                        "Export complete"
-                                    } else {
-                                        "Exporting loop..."
-                                    }
+                            span {
+                                class: "material-symbols-outlined text-primary",
+                                if exported_path().is_some() {
+                                    "check_circle"
+                                } else {
+                                    "progress_activity"
                                 }
                             }
 
+                            div {
+                                class: "text-sm font-medium",
+
+                                if exported_path().is_some() {
+                                    "Export complete"
+                                } else {
+                                    "Exporting loop..."
+                                }
+                            }
+                        }
+
+                        button {
+                            class: "flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface cursor-pointer",
+                            title: "Close",
+
+                            onclick: move |evt| {
+                                evt.stop_propagation();
+
+                                export_started.set(false);
+                                export_progress.set(0.0);
+                                exported_path.set(None);
+                            },
+
+                            span {
+                                class: "material-symbols-outlined text-[18px]",
+                                "close"
+                            }
+                        }
+                    }
+
+                    div {
+                        class: "mt-3 h-2 overflow-hidden rounded-full bg-surface-variant",
+
+                        div {
+                            class: "h-full rounded-full bg-primary transition-all duration-300",
+                            style: "width: {export_progress() * 100.0}%;",
+                        }
+                    }
+
+                    div {
+                        class: "mt-2 w-full max-w-full overflow-hidden break-all whitespace-normal text-xs leading-5 text-on-surface-variant",
+
+                        if let Some(path) = exported_path() {
+                            "{path}"
+                        } else {
+                            "{(export_progress() * 100.0) as u32}%"
+                        }
+                    }
+
+                    if let Some(path) = exported_path() {
+                        div {
+                            class: "mt-3 flex justify-end",
+
                             button {
-                                class: "flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-variant hover:text-on-surface cursor-pointer",
-                                title: "Close",
+                                class: "flex items-center shrink-0 gap-2 rounded-xl bg-primary px-3 py-2 text-sm text-on-primary hover:brightness-110 cursor-pointer",
 
                                 onclick: move |evt| {
                                     evt.stop_propagation();
 
-                                    export_started.set(false);
-                                    export_progress.set(0.0);
-                                    exported_path.set(None);
+                                    open_file_location(path.clone());
                                 },
 
                                 span {
                                     class: "material-symbols-outlined text-[18px]",
-                                    "close"
+                                    "folder_open"
                                 }
-                            }
-                        }
 
-                        div {
-                            class: "mt-3 h-2 overflow-hidden rounded-full bg-surface-variant",
-
-                            div {
-                                class: "h-full rounded-full bg-primary transition-all duration-300",
-                                style: "width: {export_progress() * 100.0}%;",
-                            }
-                        }
-
-                        div {
-                            class: "mt-2 w-full max-w-full overflow-hidden break-all whitespace-normal text-xs leading-5 text-on-surface-variant",
-
-                            if let Some(path) = exported_path() {
-                                "{path}"
-                            } else {
-                                "{(export_progress() * 100.0) as u32}%"
-                            }
-                        }
-
-                        if let Some(path) = exported_path() {
-                            div {
-                                class: "mt-3 flex justify-end",
-
-                                button {
-                                    class: "flex items-center shrink-0 gap-2 rounded-xl bg-primary px-3 py-2 text-sm text-on-primary hover:brightness-110 cursor-pointer",
-
-                                    onclick: move |evt| {
-                                        evt.stop_propagation();
-
-                                        open_file_location(path.clone());
-                                    },
-
-                                    span {
-                                        class: "material-symbols-outlined text-[18px]",
-                                        "folder_open"
-                                    }
-
-                                    "Open folder"
-                                }
+                                "Open folder"
                             }
                         }
                     }
                 }
-
             }
 
             // Левый маркер

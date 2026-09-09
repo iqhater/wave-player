@@ -5,63 +5,17 @@ use crate::shared::event_types::AudioError;
 use rodio::Source;
 use std::fs::File;
 use std::io::BufReader;
-use std::num::NonZeroU16;
-use std::num::NonZeroU32;
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
 use crate::backend::timestretch::TimeStretchSource;
-use rodio::{Decoder, Player, decoder::DecoderBuilder};
-use rodio_wsola::WsolaSourceExt;
+use rodio::{Decoder, decoder::DecoderBuilder};
 
 use std::fs;
 
 // ---------------------------------------------------------------------------
 // Decoding helpers
 // ---------------------------------------------------------------------------
-
-/// Открывает файл, создаёт декодер, добавляет его в плеер.
-/// Возвращает длительность трека в случае успеха.
-pub fn load_file_with_decoder(
-    path: &Path,
-    player: &Player,
-    lp_cutoff: Arc<AtomicU32>,
-    hp_cutoff: Arc<AtomicU32>,
-    ms_mode: Arc<AtomicU32>,
-    width: Arc<AtomicU32>,
-    pan: Arc<AtomicU32>,
-) -> Result<(Duration, NonZeroU16, NonZeroU32), AudioError> {
-    let file = File::open(path)
-        .map_err(|_| AudioError::FileNotFound(path.to_string_lossy().into_owned()))?;
-
-    let len = fs::metadata(path)
-        .map_err(|_| AudioError::FileCorrupted)?
-        .len();
-
-    let decoder = DecoderBuilder::new()
-        .with_data(BufReader::new(file))
-        .with_byte_len(len)
-        .with_seekable(true)
-        .with_coarse_seek(true)
-        // .with_hint("mp3")
-        .build()
-        .map_err(|_| AudioError::FileCorrupted)?;
-
-    // let decoder = decoder.repeat_infinite();
-    let channels = decoder.channels();
-    let sample_rate = decoder.sample_rate();
-    let duration = decoder.total_duration().unwrap_or(Duration::from_secs(0));
-
-    let decoder = decoder.amplify_decibel(3.5);
-
-    let filtered = LiveFilteredSource::new(decoder, lp_cutoff, hp_cutoff);
-    let spatial = LiveSpatialSource::new(filtered, ms_mode, width, pan);
-    player.append(spatial);
-
-    Ok((duration, channels, sample_rate))
-}
 
 // V2
 pub(crate) fn open_file_with_decoder(path: &Path) -> Result<Decoder<BufReader<File>>, AudioError> {
