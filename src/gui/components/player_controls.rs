@@ -69,7 +69,7 @@ pub fn PlayerControls() -> Element {
                     gap-1 px-3 py-6
                     neumorph-raised
                     md:min-h-[130px]
-                    lg:static lg:mt-18 lg:min-h-0 lg:w-auto
+                    lg:static lg:min-h-0 lg:w-auto
                     lg:gap-6 lg:rounded-full lg:px-6 lg:py-4
                     hover:shadow",
             div { class: "flex shrink-0 items-center gap-4

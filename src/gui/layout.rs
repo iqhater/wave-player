@@ -201,24 +201,33 @@ pub fn RootLayout() -> Element {
                 Sidebar {}
 
                 main { class: "relative flex min-w-0 flex-1 flex-col
-                               items-center justify-start
-                               overflow-y-auto bg-surface
-                               px-4 pb-52 pt-24
-                               lg:justify-center
-                               lg:p-container-padding
-                               lg:pb-0",
-                    div { class: "{content_width_class}
-                                  flex w-full flex-col items-center gap-6
-                                  lg:gap-8",
+                               items-center overflow-hidden bg-surface",
+                        div { class: "flex min-h-0 w-full flex-1 flex-col items-center
+                                     overflow-y-auto
+                                     px-4 pb-52 pt-24
+                                     lg:justify-center
+                                     lg:p-container-padding
+                                     lg:pb-40",
+                           div { class: "{content_width_class}
+                                         flex w-full flex-col items-center gap-6
+                                         lg:gap-8",
+                               // Router paste here: Home, Recents, Favorites or Settings
+                               Outlet::<Route> {}
+                           }
 
-                        // Router paste here: Home, Recents, Favorites or Settings
-                        Outlet::<Route> {}
-
-                        // All errors overlay notification from audio engine
-                        ErrorsToast {}
+                           // All errors overlay notification from audio engine
+                           ErrorsToast {}
                     }
+
                     if !hide_controls {
-                        PlayerControls {}
+                        div {
+                            class: "pointer-events-none absolute inset-x-0 bottom-0
+                                    z-40 flex justify-center lg:bottom-24",
+                            div {
+                                class: "pointer-events-auto",
+                                PlayerControls {}
+                            }
+                        }
                     }
                 }
             }

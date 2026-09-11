@@ -53,8 +53,15 @@ impl<S: Source> TimeStretchSource<S> {
             EngineProfile::Tape
         };
 
-        let (controller, processor, source) =
-            Self::build_engine(sample_rate.get(), channels.get() as usize, current_profile)?;
+        let initial_speed =
+            f32::from_bits(speed.load(Ordering::Acquire)).clamp(MIN_SPEED, MAX_SPEED);
+
+        let (controller, processor, source) = Self::build_engine(
+            sample_rate.get(),
+            channels.get() as usize,
+            current_profile,
+            initial_speed as f64,
+        )?;
 
         let channels_count = channels.get() as usize;
 
@@ -93,13 +100,14 @@ impl<S: Source> TimeStretchSource<S> {
         sample_rate: u32,
         channels: usize,
         profile: EngineProfile,
+        initial_tempo_rate: f64,
     ) -> Result<(EngineController, EngineProcessor, SourceProducer), timestretch::StretchError>
     {
         let handles = Engine::build(EngineConfig {
             sample_rate,
             channels,
             profile,
-            initial_tempo_rate: 1.0,
+            initial_tempo_rate,
             ..EngineConfig::default()
         })?;
 
@@ -117,6 +125,7 @@ impl<S: Source> TimeStretchSource<S> {
             self.sample_rate.get(),
             self.channels.get() as usize,
             expected_profile,
+            self.current_speed() as f64,
         ) else {
             return;
         };
@@ -136,7 +145,7 @@ impl<S: Source> TimeStretchSource<S> {
     }
 
     fn current_speed(&self) -> f32 {
-        f32::from_bits(self.speed.load(Ordering::Relaxed)).clamp(MIN_SPEED, MAX_SPEED)
+        f32::from_bits(self.speed.load(Ordering::Acquire)).clamp(MIN_SPEED, MAX_SPEED)
     }
 
     fn update_speed(&self) {
@@ -265,6 +274,7 @@ impl<S: Source> Source for TimeStretchSource<S> {
             self.sample_rate.get(),
             self.channels.get() as usize,
             self.current_profile,
+            self.current_speed() as f64,
         )
         .map_err(|_| rodio::source::SeekError::NotSupported {
             underlying_source: "failed to rebuild timestretch engine",

@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use rodio::Source;
 
+use super::playback;
 use crate::backend::analysis::bpm_key::analyze_bpm_key;
 use crate::backend::analysis::waveform::stream_waveform;
 use crate::backend::decoder::{build_audio_pipeline, load_samples_mono, open_file_with_decoder};
@@ -20,6 +21,9 @@ use crate::shared::store_types::TrackData;
 pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), AudioError> {
     state.player.stop();
     state.player.clear();
+
+    // speed sync
+    playback::apply_playback_speed(state);
 
     state.track.is_loaded = false;
     state.track.is_playing = false;
