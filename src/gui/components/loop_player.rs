@@ -68,6 +68,15 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
         100.0
     };
 
+    // The labels are about 50 px wide with the current font and padding.
+    const LOOP_LABEL_COLLISION_GAP_PX: f32 = 52.0;
+
+    let loop_markers_distance_px = ((rp - lp).max(0.0) / 100.0) * container_width().max(1.0);
+
+    let loop_labels_overlap = loop_markers_distance_px < LOOP_LABEL_COLLISION_GAP_PX;
+
+    let loop_labels_center = (lp + rp) / 2.0;
+
     let send_set_loop = move || {
         let _ = ctx.command_tx.read().send(PlayerCommand::SetLoop(
             Duration::from_secs_f32(loop_start()),
@@ -417,6 +426,30 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                 }
             }
 
+            // When the markers are close, show both labels as one vertical stack.
+            if loop_labels_overlap {
+                div {
+                    class: "pointer-events-none absolute z-30 flex
+                            -translate-x-1/2 flex-col items-center gap-0.5",
+
+                    style: "left: {loop_labels_center}%; bottom: calc(100% + 4px);",
+
+                    div {
+                        class: "rounded-md bg-primary/10 px-1 text-center
+                                font-mono text-xs text-primary whitespace-nowrap",
+
+                        "{format_time(loop_start() as u32)}"
+                    }
+
+                    div {
+                        class: "rounded-md bg-primary/10 px-1 text-center
+                                font-mono text-xs text-primary whitespace-nowrap",
+
+                        "{format_time(loop_end() as u32)}"
+                    }
+                }
+            }
+
             // Левый маркер
             div {
                 class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20",
@@ -430,9 +463,16 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     anchor_val.set(loop_start());
                 },
                 // Метка над левым маркером
-                div { class: "absolute -top-15 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/10 px-1 rounded-md text-center whitespace-nowrap",
-                    "{format_time(loop_start() as u32)}"
+                if !loop_labels_overlap {
+                    div {
+                        class: "absolute -top-15 left-1/2 -translate-x-1/2
+                                text-xs text-primary font-mono bg-primary/10
+                                px-1 rounded-md text-center whitespace-nowrap",
+
+                        "{format_time(loop_start() as u32)}"
+                    }
                 }
+
                 span { class: "material-symbols-outlined text-primary/90 text-[48px] hover:scale-115", "drag_indicator" }
             }
 
@@ -449,9 +489,16 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     anchor_val.set(loop_end());
                 },
                 // Метка над правым маркером
-                div { class: "absolute -top-15 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/10 px-1 rounded-md text-center whitespace-nowrap",
-                    "{format_time(loop_end() as u32)}"
+                if !loop_labels_overlap {
+                    div {
+                        class: "absolute -top-15 left-1/2 -translate-x-1/2
+                                text-xs text-primary font-mono bg-primary/10
+                                px-1 rounded-md text-center whitespace-nowrap",
+
+                        "{format_time(loop_end() as u32)}"
+                    }
                 }
+
                 span { class: "material-symbols-outlined text-primary/90 text-[48px] hover:scale-115", "drag_indicator" }
             }
         }

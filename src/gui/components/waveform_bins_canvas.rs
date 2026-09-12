@@ -477,7 +477,10 @@ pub fn WaveformBinsCanvas(
         let pos = ctx.playback_progress.read().clone();
 
         async move {
-            let mut last_position = pos.load(Ordering::Relaxed);
+            let initial_position = pos.load(Ordering::Relaxed);
+            position_secs.set(initial_position as f32 / 1000.0);
+
+            let mut last_position = initial_position;
 
             loop {
                 tokio::time::sleep(Duration::from_millis(50)).await;
