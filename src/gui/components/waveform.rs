@@ -68,11 +68,11 @@ pub fn Waveform() -> Element {
     let cursor_progress = if dur > 0.0 { (pos / dur) * 100.0 } else { 0.0 };
 
     // Viewport calculations
-    let inv_zoom = zoom_level().recip();
-    let half_view = 50.0 * inv_zoom;
-    let view_center_val = view_center();
-    let view_start = (view_center_val - half_view).clamp(0.0, 100.0 - 100.0 * inv_zoom);
-    let view_end = (view_start + 100.0 * inv_zoom).min(100.0);
+    // let inv_zoom = zoom_level().recip();
+    let half_view = 50.0 * zoom_level().recip();
+    // let view_center_val = view_center();
+    let view_start = (view_center() - half_view).clamp(0.0, 100.0 - 100.0 * zoom_level().recip());
+    let view_end = (view_start + 100.0 * zoom_level().recip()).min(100.0);
     let view_range = view_end - view_start;
 
     // let total_bars = waveform_data().len();
@@ -265,7 +265,7 @@ pub fn Waveform() -> Element {
             if has_track() {
                 // Loop Player component
                 if is_loop_enabled() {
-                    LoopPlayer { total_duration: dur },
+                    LoopPlayer { total_duration: dur, zoom: zoom_level, view_center, },
                 }
             }
 
@@ -407,7 +407,12 @@ pub fn Waveform() -> Element {
 
                     // Waveform bars
                     // WaveformBins { total_duration: duration_secs, cursor_progress }
-                    WaveformBinsCanvas { total_duration: duration_secs, cursor_progress }
+                    WaveformBinsCanvas {
+                        total_duration: duration_secs,
+                        cursor_progress,
+                        zoom: zoom_level,
+                        view_center,
+                    }
 
                     // TODO: fix gird zoom and calcualtions
                     if show_grid() {

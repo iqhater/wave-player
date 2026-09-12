@@ -173,16 +173,27 @@ const WAVEFORM_JS: &str = r#"
         const loopEndPct =
             window.waveViewportPctAtTime(loopEnd);
 
+        const visibleLoopStartPct = Math.max(0, Math.min(100, loopStartPct));
+        const visibleLoopEndPct = Math.max(0, Math.min(100, loopEndPct));
+        const loopCenterPct = (visibleLoopStartPct + visibleLoopEndPct) / 2;
+
         loopElement.style.setProperty(
             "--wave-loop-start",
-            `${Math.max(0, Math.min(100, loopStartPct))}%`
+            `${visibleLoopStartPct}%`
         );
 
         loopElement.style.setProperty(
             "--wave-loop-end",
-            `${Math.max(0, Math.min(100, loopEndPct))}%`
+            `${visibleLoopEndPct}%`
+        );
+
+        loopElement.style.setProperty(
+            "--wave-loop-center",
+            `${loopCenterPct}%`
         );
     }
+
+    window.updateWaveViewportVariables = updateWaveViewportVariables;
 
     /*
      * Изменяет zoom относительно точки под курсором.
@@ -425,6 +436,8 @@ const WAVEFORM_JS: &str = r#"
 pub fn WaveformBinsCanvas(
     total_duration: ReadSignal<f32>,
     cursor_progress: ReadSignal<f32>,
+    mut zoom: Signal<f32>,
+    mut view_center: Signal<f32>,
 ) -> Element {
     let ctx = use_context::<PlayerContext>();
     let mut position_secs = use_signal(|| 0.0);
@@ -447,6 +460,8 @@ pub fn WaveformBinsCanvas(
 
                         // Сбрасываем зум в исходное состояние при запуске нового трека
                         reset_zoom.set(true);
+                        zoom.set(1.0);
+                        view_center.set(50.0);
                     }
                     PlayerEvent::WaveformChunkReady {
                         chunk,
@@ -564,20 +579,49 @@ pub fn WaveformBinsCanvas(
                 let factor = if delta_y < 0.0 { 1.15 } else { 1.0 / 1.15 };
 
                 // Вся логика зума — в JS (синхронно, без гонок и без запроса ширины)
-                let eval = dioxus::document::eval(
+                let mut eval = dioxus::document::eval(
                     r#"
                     let data = await dioxus.recv();
                     let canvas = document.getElementById("waveform-canvas");
                     if (!canvas || !window.zoomAt) return;
-                    let w = canvas.clientWidth || 1;
-                    let pct = Math.max(0, Math.min(1, data.x / w));
+                    let width = canvas.clientWidth || 1;
+                    let pct = Math.max(0, Math.min(1, data.x / width));
                     window.zoomAt(pct, data.factor);
+
+                    dioxus.send({
+                        zoom: window.waveZoom || 1,
+                        scroll: window.waveScroll || 0
+                    });
                     "#
                 );
                 let _ = eval.send(serde_json::json!({
                     "x": click_x,
                     "factor": factor
                 }));
+                spawn(async move {
+                    if let Ok(serde_json::Value::Object(data)) = eval.recv().await {
+                        let new_zoom = data
+                            .get("zoom")
+                            .and_then(|value| value.as_f64())
+                            .unwrap_or(1.0) as f32;
+
+                        let scroll = data
+                            .get("scroll")
+                            .and_then(|value| value.as_f64())
+                            .unwrap_or(0.0) as f32;
+
+                        let visible_fraction = 1.0 / new_zoom.max(1.0);
+
+                        let start_fraction =
+                            scroll.clamp(0.0, 1.0) * (1.0 - visible_fraction);
+
+                        let center_percent =
+                            (start_fraction + visible_fraction / 2.0) * 100.0;
+
+                        zoom.set(new_zoom);
+                        view_center.set(center_percent.clamp(0.0, 100.0));
+                    }
+                });
             }
         }
     }

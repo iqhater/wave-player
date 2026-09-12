@@ -8,12 +8,25 @@ use futures_util::StreamExt;
 use std::time::Duration;
 
 #[component]
-pub fn LoopPlayer(total_duration: f32) -> Element {
+pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signal<f32>) -> Element {
     let ctx = use_context::<PlayerContext>();
     let loop_state = use_context::<LoopUIState>();
 
     let mut loop_start = loop_state.start;
     let mut loop_end = loop_state.end;
+
+    use_effect(move || {
+        // Чтение сигналов внутри эффекта делает их зависимостями.
+        let _ = (loop_start(), loop_end(), total_duration);
+
+        let _ = dioxus::document::eval(
+            r#"
+            if (window.updateWaveViewportVariables) {
+                window.updateWaveViewportVariables();
+            }
+            "#,
+        );
+    });
 
     // 2. Делаем пропс реактивным с помощью use_reactive!
     // Как только total_duration изменится, этот эффект гарантированно перезапустится
@@ -71,7 +84,21 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
     // The labels are about 50 px wide with the current font and padding.
     const LOOP_LABEL_COLLISION_GAP_PX: f32 = 52.0;
 
-    let loop_markers_distance_px = ((rp - lp).max(0.0) / 100.0) * container_width().max(1.0);
+    let zoom_factor = zoom().max(1.0);
+
+    let visible_duration = if total_duration > 0.0 {
+        total_duration / zoom_factor
+    } else {
+        0.0
+    };
+
+    let loop_duration = (loop_end() - loop_start()).max(0.0);
+
+    let loop_markers_distance_px = if visible_duration > 0.0 {
+        (loop_duration / visible_duration) * container_width().max(1.0)
+    } else {
+        0.0
+    };
 
     let loop_labels_overlap = loop_markers_distance_px < LOOP_LABEL_COLLISION_GAP_PX;
 
@@ -129,6 +156,80 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     if let Ok(r) = el.get_client_rect().await {
                         cl.set(r.origin.x as f32);
                         container_width.set(r.size.width as f32);
+                    }
+                });
+            },
+
+            // same zoom at the inner loop region
+            onwheel: move |e| {
+                let delta_y = e.delta().strip_units().y;
+                let client_x = e.data().client_coordinates().x as f32;
+
+                let factor = if delta_y < 0.0 {
+                    1.15
+                } else {
+                    1.0 / 1.15
+                };
+
+                let mut eval = dioxus::document::eval(
+                    r#"
+                    let data = await dioxus.recv();
+
+                    const canvas =
+                        document.getElementById("waveform-canvas");
+
+                    if (!canvas || !window.zoomAt) {
+                        return;
+                    }
+
+                    const rect =
+                        canvas.getBoundingClientRect();
+
+                    const width =
+                        canvas.clientWidth || 1;
+
+                    const localX =
+                        data.clientX - rect.left;
+
+                    const pct =
+                        Math.max(0, Math.min(1, localX / width));
+
+                    window.zoomAt(pct, data.factor);
+
+                    dioxus.send({
+                        zoom: window.waveZoom || 1,
+                        scroll: window.waveScroll || 0
+                    });
+                    "#,
+                );
+
+                spawn(async move {
+                    let _ = eval.send(serde_json::json!({
+                        "clientX": client_x,
+                        "factor": factor,
+                    }));
+
+                    if let Ok(serde_json::Value::Object(data)) = eval.recv().await {
+                        let new_zoom = data
+                                .get("zoom")
+                                .and_then(|value| value.as_f64())
+                                .unwrap_or(1.0) as f32;
+
+                            let scroll = data
+                                .get("scroll")
+                                .and_then(|value| value.as_f64())
+                                .unwrap_or(0.0) as f32;
+
+                            let visible_fraction = 1.0 / new_zoom.max(1.0);
+
+                            let start_fraction =
+                                scroll.clamp(0.0, 1.0) * (1.0 - visible_fraction);
+
+                            let center_percent =
+                                (start_fraction + visible_fraction / 2.0) * 100.0;
+
+                            zoom.set(new_zoom);
+                            view_center.set(center_percent.clamp(0.0, 100.0));
                     }
                 });
             },
@@ -200,11 +301,12 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                             let cx = e.data().client_coordinates().x as f32 - left;
                             // let container_width = 600.0;
                             let container_width = container_width().max(1.0);
+                            let visible_duration = total_duration / zoom().max(1.0);
 
                             match mode {
                                 "M" => {
                                     let dx = cx - anchor_x();
-                                    let ds = (dx / container_width) * total_duration;
+                                    let ds = (dx / container_width) * visible_duration;
                                     let rw = anchor_r() - anchor_l();
                                     let mut ns = anchor_l() + ds;
                                     ns = ns.max(0.0).min((total_duration - rw).max(0.0));
@@ -213,7 +315,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                                 }
                                 "L" => {
                                     let dx = cx - anchor_x();
-                                    let ds = (dx / container_width) * total_duration;
+                                    let ds = (dx / container_width) * visible_duration;
                                     let new_l = (anchor_val() + ds)
                                         .max(0.0)
                                         .min((loop_end() - 0.5).max(0.0));
@@ -221,7 +323,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                                 }
                                 "R" => {
                                     let dx = cx - anchor_x();
-                                    let ds = (dx / container_width) * total_duration;
+                                    let ds = (dx / container_width) * visible_duration;
                                     let new_r = (anchor_val() + ds)
                                         .max(loop_start() + 0.5)
                                         .min(total_duration);
@@ -249,8 +351,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
             div {
                 class: "absolute inset-y-0 border-2 border-dashed rounded-xl border-primary/60 cursor-grab z-10",
                 class: if is_loop_enabled() { "bg-primary/20" } else { "bg-primary/5" },
-                style: "left: {lp}%; right: {100.0 - rp}%;",
-                // style: "left: var(--wave-loop-start, {lp}%); right: calc(100% - var(--wave-loop-end, {rp}%));",
+                // style: "left: {lp}%; right: {100.0 - rp}%;",
+                style: "left: var(--wave-loop-start, {lp}%); right: calc(100% - var(--wave-loop-end, {rp}%));",
                 onmousedown: move |e| {
                     e.stop_propagation();
                     dragging.set(Some("M"));
@@ -432,7 +534,7 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
                     class: "pointer-events-none absolute z-30 flex
                             -translate-x-1/2 flex-col items-center gap-0.5",
 
-                    style: "left: {loop_labels_center}%; bottom: calc(100% + 4px);",
+                    style: "left: var(--wave-loop-center, {loop_labels_center}%); bottom: calc(100% + 4px);",
 
                     div {
                         class: "rounded-md bg-primary/10 px-1 text-center
@@ -453,8 +555,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
             // Левый маркер
             div {
                 class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20",
-                style: "left: {lp}%;",
-                // style: "left: var(--wave-loop-start, {lp}%);",
+                // style: "left: {lp}%;",
+                style: "left: var(--wave-loop-start, {lp}%);",
                 onmousedown: move |e| {
                     e.stop_propagation();
                     dragging.set(Some("L"));
@@ -479,8 +581,8 @@ pub fn LoopPlayer(total_duration: f32) -> Element {
             // Правый маркер
             div {
                 class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20",
-                style: "left: {rp}%;",
-                // style: "left: var(--wave-loop-end, {rp}%);",
+                // style: "left: {rp}%;",
+                style: "left: var(--wave-loop-end, {rp}%);",
                 onmousedown: move |e| {
                     e.stop_propagation();
                     dragging.set(Some("R"));
