@@ -69,10 +69,6 @@ where
             }
 
             buffer.clear();
-
-            if !send_loudness_update(&meter, &status_tx) {
-                return;
-            }
         }
 
         let complete_samples = buffer.len() - buffer.len() % channels;
@@ -81,11 +77,35 @@ where
             return;
         }
 
-        let _ = send_loudness_update(&meter, &status_tx);
+        let _ = send_integrated_loudness(&meter, &status_tx);
     });
 }
 
-fn send_loudness_update<T>(meter: &EbuR128, status_tx: &T) -> bool
+fn send_integrated_loudness<T>(meter: &EbuR128, status_tx: &T) -> bool
+where
+    T: Fn(PlayerEvent) -> Result<(), Box<dyn std::error::Error>>,
+{
+    let Some(integrated_lufs) = meter
+        .loudness_global()
+        .ok()
+        .map(|value| value as f32)
+        .filter(|value| value.is_finite())
+    else {
+        return true;
+    };
+
+    let event = PlayerEvent::LoudnessMeasured {
+        momentary_lufs: None,
+        shortterm_lufs: None,
+        integrated_lufs: Some(integrated_lufs),
+    };
+
+    eprintln!("LUFS-I: {integrated_lufs:.1}");
+
+    status_tx(event).is_ok()
+}
+
+/* fn send_loudness_update<T>(meter: &EbuR128, status_tx: &T) -> bool
 where
     T: Fn(PlayerEvent) -> Result<(), Box<dyn std::error::Error>>,
 {
@@ -105,9 +125,9 @@ where
     );
 
     status_tx(event).is_ok()
-}
+} */
 
-fn start_loudness_analysis(path: PathBuf, status_tx: &StatusSender) {
+pub fn start_loudness_analysis(path: PathBuf, status_tx: &StatusSender) {
     let status_tx = status_tx.clone();
 
     stream_loudness(path, move |event| {

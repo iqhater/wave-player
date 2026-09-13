@@ -9,6 +9,7 @@ use rodio::Source;
 
 use super::playback;
 use crate::backend::analysis::bpm_key::analyze_bpm_key;
+use crate::backend::analysis::lufs::start_loudness_analysis;
 use crate::backend::analysis::waveform::stream_waveform;
 use crate::backend::decoder::{build_audio_pipeline, load_samples_mono, open_file_with_decoder};
 use crate::backend::metadata::parse_track_metadata;
@@ -84,6 +85,8 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
         duration,
         state,
     );
+
+    start_loudness_analysis(path.clone(), &state.status_tx);
 
     start_bpm_analysis(path, state.status_tx.clone(), state.store_cmd_tx.clone());
 

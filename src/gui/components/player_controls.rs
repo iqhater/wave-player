@@ -166,7 +166,6 @@ pub fn PlayerControls() -> Element {
                 }
 
                 VolumeControl {}
-                // LUFS {}
             }
         }
     }
@@ -413,6 +412,7 @@ fn VolumeControl() -> Element {
 
                 span {
                     class: "material-symbols-outlined text-[20px] text-secondary",
+                    title: "change volume",
 
                     if volume() > 0.5 {
                         "volume_up"
@@ -423,28 +423,39 @@ fn VolumeControl() -> Element {
                     }
                 }
 
-                input {
-                    class: "mx-2 h-1.5 w-24 accent-primary cursor-pointer",
-                    r#type: "range",
-                    min: "0.0",
-                    max: "1.0",
-                    step: "0.01",
-                    value: "{volume()}",
+                div {
+                        class: "relative flex items-center",
 
-                    oninput: move |event| {
-                        let Ok(current_volume) = event.value().parse::<f32>() else {
-                            return;
-                        };
+                        input {
+                            class: "mx-2 h-1.5 w-24 accent-primary cursor-pointer",
+                            r#type: "range",
+                            min: "0.0",
+                            max: "1.0",
+                            step: "0.01",
+                            value: "{volume()}",
 
-                        let current_volume = current_volume.clamp(0.0, 1.0);
+                            oninput: move |event| {
+                                let Ok(current_volume) = event.value().parse::<f32>() else {
+                                    return;
+                                };
 
-                        let _ = ctx
-                            .command_tx
-                            .read()
-                            .send(PlayerCommand::SetVolume(current_volume));
+                                let current_volume = current_volume.clamp(0.0, 1.0);
 
-                        volume.set(current_volume);
-                    },
+                                let _ = ctx
+                                    .command_tx
+                                    .read()
+                                    .send(PlayerCommand::SetVolume(current_volume));
+
+                                volume.set(current_volume);
+                            },
+                        }
+
+                        div {
+                            class: "absolute bottom-full left-1/2
+                                    mb-2 -translate-x-1/2 whitespace-nowrap",
+
+                            LUFS {}
+                        }
                 }
 
                 span {
@@ -458,6 +469,13 @@ fn VolumeControl() -> Element {
             // Mobile/tablet volume button
             div {
                 class: "relative lg:hidden",
+
+                div {
+                    class: "absolute bottom-full left-1/2
+                            mb-0 -translate-x-1/2 whitespace-nowrap",
+
+                    LUFS {}
+                }
 
                 button {
                     class: "relative z-50 flex h-10 w-10 items-center
@@ -509,8 +527,6 @@ fn VolumeControl() -> Element {
                             class: "text-xs font-bold text-secondary
                                     whitespace-nowrap",
 
-                            style: "transform: translateY(-4px);",
-
                             "{(volume() * 100.0):.0}%"
                         }
 
@@ -549,6 +565,21 @@ fn VolumeControl() -> Element {
     }
 }
 
+fn usable_lufs(value: f32) -> bool {
+    value.is_finite() && (-60.0..=0.0).contains(&value)
+}
+
+fn select_lufs(
+    integrated_lufs: Option<f32>,
+    shortterm_lufs: Option<f32>,
+    momentary_lufs: Option<f32>,
+) -> Option<f32> {
+    [integrated_lufs, shortterm_lufs, momentary_lufs]
+        .into_iter()
+        .flatten()
+        .find(|value| usable_lufs(*value))
+}
+
 #[component]
 fn LUFS() -> Element {
     let ctx = use_context::<PlayerContext>();
@@ -565,11 +596,14 @@ fn LUFS() -> Element {
                     }
 
                     PlayerEvent::LoudnessMeasured {
-                        momentary_lufs,
-                        shortterm_lufs,
-                        integrated_lufs: _,
+                        integrated_lufs, ..
                     } => {
-                        lufs.set(shortterm_lufs.or(momentary_lufs));
+                        if let Some(value) = integrated_lufs
+                            .filter(|value| value.is_finite())
+                            .filter(|value| (-60.0..=0.0).contains(value))
+                        {
+                            lufs.set(Some(value));
+                        }
                     }
 
                     _ => {}
@@ -580,10 +614,11 @@ fn LUFS() -> Element {
 
     rsx! {
         span {
-            class: "text-label-sm font-bold text-secondary whitespace-nowrap",
+            class: "text-[12px] font-bold text-primary whitespace-nowrap",
+            title: "Track LUFS Integrated",
             match lufs() {
-                Some(value) => format!("{value:.1} LUFS"),
-                None => "— LUFS".to_string(),
+                Some(value) => format!("{value:.1} LUFS-I"),
+                None => "— LUFS-I".to_string(),
             }
         }
 
