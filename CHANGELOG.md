@@ -2,6 +2,17 @@
 
 ### 🚀 Features
 
+- *(ui)* Add App Info and close update notice
+
+### 🐛 Bug Fixes
+
+- *(ui)* Pin player controls across screens
+- Restore playback cursor and loop labels
+- Sync waveform zoom coordinates
+## [0.1.0-alpha.11] - 2026-09-09
+
+### 🚀 Features
+
 - *(recent)* Add recent tracks list
 
 ### 🐛 Bug Fixes
@@ -15,6 +26,10 @@
 ### 📚 Documentation
 
 - Update README
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Bump to alpha.11
 ## [0.1.0-alpha.10] - 2026-09-04
 
 ### 🚀 Features
