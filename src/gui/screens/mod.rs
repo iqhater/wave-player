@@ -1,3 +1,4 @@
+pub mod app_info;
 pub mod changelog;
 pub mod favorites;
 pub mod home;

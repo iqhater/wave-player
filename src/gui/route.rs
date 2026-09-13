@@ -2,8 +2,8 @@ use dioxus::prelude::*;
 
 use super::layout::RootLayout;
 use super::screens::{
-    changelog::Changelog, favorites::Favorites, home::Home, privacy::PrivacyPolicy,
-    recent_tracks::RecentTracks, settings::Settings, terms::TermsOfService,
+    app_info::AppInfo, changelog::Changelog, favorites::Favorites, home::Home,
+    privacy::PrivacyPolicy, recent_tracks::RecentTracks, settings::Settings, terms::TermsOfService,
 };
 
 #[derive(Clone, Debug, PartialEq, Routable)]
@@ -22,6 +22,9 @@ pub enum Route {
 
         #[route("/settings")]
         Settings,
+
+        #[route("/app-info")]
+        AppInfo,
 
         // Footer links
         #[route("/terms")]

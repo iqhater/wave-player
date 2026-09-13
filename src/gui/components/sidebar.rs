@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 pub fn Sidebar() -> Element {
     let current_route = use_route::<Route>();
     let mut collapsed = use_signal(|| false);
+    let mut show_update_notice = use_signal(|| true);
     let mut mobile_menu_open = use_context::<MobileMenuOpen>().0;
 
     let aside_class = if collapsed() {
@@ -180,41 +181,78 @@ pub fn Sidebar() -> Element {
                 compact: collapsed(),
             }
 
-            // Updates block
-            if !collapsed() {
+            // Bottom update/app info block
+            if !collapsed() && show_update_notice() {
                 div {
                     class: "mt-auto w-[calc(100%-2rem)] max-w-[520px] mx-auto p-4
                             bg-primary rounded-2xl text-surface
                             border border-outline/10 shadow-lg
                             lg:w-full lg:max-w-none lg:mx-0",
 
-                    p {
-                        class: "text-[10px] text-on-surface font-medium mb-1 \
-                                tracking-wide font-label-md text-label-md font-bold",
-                        "Version {crate::shared::APP_VERSION}"
+                    div {
+                        class: "flex items-start justify-between gap-2 mb-1",
+
+                        p {
+                            class: "text-[10px] text-on-surface font-medium
+                                    tracking-wide font-label-md text-label-md font-bold",
+                            "Version {crate::shared::APP_VERSION}"
+                        }
+
+                        button {
+                            class: "flex h-6 w-6 shrink-0 items-center justify-center
+                                    rounded-full text-on-surface/70
+                                    hover:bg-surface-bright/20 hover:text-on-surface
+                                    cursor-pointer transition-colors",
+
+                            title: "Close update notification",
+                            "aria-label": "Close update notification",
+
+                            onclick: move |_| show_update_notice.set(false),
+
+                            span {
+                                class: "material-symbols-outlined text-[18px]",
+                                "close"
+                            }
+                        }
                     }
 
                     p {
-                        class: "text-sm font-semibold mb-3 leading-tight \
+                        class: "text-sm font-semibold mb-3 leading-tight
                                 tracking-tight text-surface-bright",
                         "New update available"
                     }
 
                     button {
-                        class: "w-full py-2 bg-surface-bright \
-                                hover:bg-surface-container-low cursor-pointer \
-                                text-on-surface font-semibold rounded-xl text-xs \
-                                active:scale-[0.98] transition-all flex \
-                                items-center justify-center gap-2 \
+                        class: "w-full py-2 bg-surface-bright
+                                hover:bg-surface-container-low cursor-pointer
+                                text-on-surface font-semibold rounded-xl text-xs
+                                active:scale-[0.98] transition-all flex
+                                items-center justify-center gap-2
                                 border border-outline-variant/20 shadow-sm",
 
                         span {
-                            class: "material-symbols-outlined text-sm \
+                            class: "material-symbols-outlined text-sm
                                     text-on-surface/90 font-normal",
                             "update"
                         }
 
                         "Update Now"
+                    }
+                }
+            } else {
+                div {
+                    class: if collapsed() {
+                        "mt-auto flex w-full justify-center"
+                    } else {
+                        "mt-auto w-full"
+                    },
+
+                    SidebarButton {
+                        screen: Route::AppInfo,
+                        icon: "info",
+                        label: "App Info",
+                        active: current_route == Route::AppInfo,
+                        compact: collapsed(),
                     }
                 }
             }

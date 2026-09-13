@@ -88,7 +88,7 @@ pub fn RootLayout() -> Element {
 
     let hide_controls = matches!(
         route,
-        Route::TermsOfService | Route::PrivacyPolicy | Route::Changelog
+        Route::TermsOfService | Route::PrivacyPolicy | Route::Changelog | Route::AppInfo
     );
 
     // loop and timeline cursor state
