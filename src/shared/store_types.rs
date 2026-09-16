@@ -19,6 +19,7 @@ pub struct Track {
     /// JSON-объект с параметрами аудиоэффектов.
     pub audio_fx_params: Option<String>,
     pub waveform_cache_path: Option<PathBuf>,
+    pub cover_cache_path: Option<PathBuf>,
     /// Timestamp в формате SQLite TEXT, например `2026-08-26 12:34:56`.
     pub created_at: String,
 }
@@ -32,6 +33,9 @@ pub struct TrackData {
     pub genre: Option<String>,
     /// Длительность в миллисекундах.
     pub duration: i64,
+
+    /// Raw cover bytes extracted from metadata or loaded from cache.
+    pub cover: Vec<u8>,
 }
 
 /// Избранное.

@@ -1,6 +1,8 @@
 use crate::PlayerContext;
+use crate::gui::components::album_art::TrackThumbnail;
 use crate::shared::command_types::{PlayerCommand, StoreCommand};
 use crate::shared::event_types::{PlayerEvent, StoreEvent};
+
 use std::path::PathBuf;
 
 use crate::shared::store_types::Track;
@@ -303,25 +305,8 @@ fn FavoriteTrackRow(
             }
 
             // Обложка или компактная заглушка.
-            div {
-                class: "w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-surface-container flex items-center justify-center",
-
-                span {
-                    class: "material-symbols-outlined text-[20px] text-secondary",
-                    "music_note"
-                }
-                /* if let Some(cover_path) = track.cover_cache_path.clone() {
-                    img {
-                        class: "w-full h-full object-cover",
-                        src: cover_path.to_string_lossy().into_owned(),
-                        alt: "Album cover",
-                    }
-                } else {
-                    span {
-                        class: "material-symbols-outlined text-[20px] text-secondary",
-                        "music_note"
-                    }
-                } */
+            TrackThumbnail {
+                cache_path: track.cover_cache_path.clone(),
             }
 
             // Название.

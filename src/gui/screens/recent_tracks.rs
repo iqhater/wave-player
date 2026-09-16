@@ -1,7 +1,9 @@
 use crate::PlayerContext;
+use crate::gui::components::album_art::TrackThumbnail;
 use crate::shared::command_types::{PlayerCommand, StoreCommand};
 use crate::shared::event_types::{PlayerEvent, StoreEvent};
 use crate::shared::store_types::{RecentTrack, Track};
+
 use chrono::{Local, NaiveDateTime, TimeZone};
 
 use dioxus::prelude::*;
@@ -260,14 +262,8 @@ fn RecentTrackRow(
                 }
             }
 
-            div {
-                class: "w-10 h-10 shrink-0 rounded-lg overflow-hidden \
-                        bg-surface-container flex items-center justify-center",
-
-                span {
-                    class: "material-symbols-outlined text-[20px] text-secondary",
-                    "music_note"
-                }
+            TrackThumbnail {
+                cache_path: track.cover_cache_path.clone(),
             }
 
             div {

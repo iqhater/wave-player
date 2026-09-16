@@ -2,6 +2,8 @@ use crate::PlayerContext;
 use crate::shared::event_types::PlayerEvent;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
+use std::fs;
+use std::path::PathBuf;
 
 /// Helper: bytes → base64 data URL for JPEG
 fn jpeg_data_url(bytes: &[u8]) -> String {
@@ -62,6 +64,37 @@ pub fn AlbumArt() -> Element {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn TrackThumbnail(cache_path: Option<PathBuf>) -> Element {
+    let cover_bytes = cache_path
+        .as_deref()
+        .and_then(|path| fs::read(path).ok())
+        .filter(|bytes| !bytes.is_empty());
+
+    let image_source = cover_bytes.as_deref().map(jpeg_data_url);
+
+    rsx! {
+        div {
+            class: "w-10 h-10 shrink-0 rounded-lg overflow-hidden \
+                    bg-surface-container flex items-center justify-center",
+
+            if let Some(image_source) = image_source {
+                img {
+                    src: "{image_source}",
+                    alt: "Album cover",
+                    class: "w-full h-full object-cover",
+                }
+            } else {
+                span {
+                    class: "material-symbols-outlined text-[20px] \
+                            text-secondary",
+                    "music_note"
                 }
             }
         }

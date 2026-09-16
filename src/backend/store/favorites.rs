@@ -9,9 +9,14 @@ impl DbStore {
     ///
     /// Если трека ещё нет в tracks, сначала создаётся минимальная запись.
     /// Повторно добавить уже избранный трек невозможно.
-    pub fn add_favorite(&mut self, path: &Path, track_data: &TrackData) -> rusqlite::Result<i64> {
+    pub fn add_favorite(
+        &mut self,
+        path: &Path,
+        track_data: &TrackData,
+        cover_cache_path: Option<&Path>,
+    ) -> rusqlite::Result<i64> {
         // Здесь path используется только для создания или поиска самого трека.
-        let track_id = self.add_track(path, track_data)?;
+        let track_id = self.add_track(path, track_data, cover_cache_path)?;
 
         // Проверяем избранное строго по track_id.
         if self.is_favorite(track_id)? {
@@ -65,7 +70,8 @@ impl DbStore {
                         t.duration,
                         t.bpm,
                         t.key,
-                        t.play_count
+                        t.play_count,
+                        t.cover_cache_path
                  FROM tracks t
                  INNER JOIN favorites f ON f.track_id = t.id
                  ORDER BY f.created_at DESC",
@@ -84,10 +90,11 @@ impl DbStore {
                     bpm: row.get(8)?,
                     key: row.get(9)?,
                     play_count: row.get(10)?,
+                    cover_cache_path: row.get::<_, Option<String>>(11)?.map(PathBuf::from),
 
-                    ..Track::default() // audio_fx_params: row.get(11)?,
-                                       // waveform_cache_path: row.get::<_, Option<String>>(12)?.map(PathBuf::from),
-                                       // created_at: row.get(13)?,
+                    ..Track::default() // audio_fx_params: row.get(12)?,
+                                       // waveform_cache_path: row.get::<_, Option<String>>(13)?.map(PathBuf::from),
+                                       // created_at: row.get(14)?,
                 })
             })
             .expect("query favorites")
@@ -101,8 +108,14 @@ impl DbStore {
             .collect()
     }
 
-    fn add_track(&mut self, path: &Path, track_data: &TrackData) -> rusqlite::Result<i64> {
+    fn add_track(
+        &mut self,
+        path: &Path,
+        track_data: &TrackData,
+        cover_cache_path: Option<&Path>,
+    ) -> rusqlite::Result<i64> {
         let path_str = path.to_string_lossy();
+        let cover_cache_path = cover_cache_path.map(|value| value.to_string_lossy().into_owned());
 
         let file_size = std::fs::metadata(path)
             .ok()
@@ -116,16 +129,27 @@ impl DbStore {
         let duration = track_data.duration;
 
         self.conn.execute(
-            "INSERT OR IGNORE INTO tracks (
+            "INSERT INTO tracks (
                  path,
                  file_size,
                  title,
                  artist,
                  album,
                  genre,
-                 duration
+                 duration,
+                 cover_cache_path
              )
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(path) DO UPDATE SET
+                title = excluded.title,
+                artist = excluded.artist,
+                album = excluded.album,
+                genre = excluded.genre,
+                duration = excluded.duration,
+                cover_cache_path = COALESCE(
+                    excluded.cover_cache_path,
+                    tracks.cover_cache_path
+                )",
             rusqlite::params![
                 path_str.as_ref(),
                 file_size,
@@ -133,7 +157,8 @@ impl DbStore {
                 artist,
                 album,
                 genre,
-                duration
+                duration,
+                cover_cache_path,
             ],
         )?;
 

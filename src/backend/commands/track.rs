@@ -11,8 +11,10 @@ use super::playback;
 use crate::backend::analysis::bpm_key::analyze_bpm_key;
 use crate::backend::analysis::lufs::start_loudness_analysis;
 use crate::backend::analysis::waveform::stream_waveform;
+use crate::backend::cover_cache;
 use crate::backend::decoder::{build_audio_pipeline, load_samples_mono, open_file_with_decoder};
-use crate::backend::metadata::parse_track_metadata;
+use crate::backend::metadata::parse_track_metadata_with_cover;
+
 use crate::backend::state::AudioState;
 use crate::shared::command_types::StoreCommand;
 use crate::shared::event_types::{AudioError, PlayerEvent};
@@ -59,7 +61,9 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
 
     state.player.play();
 
-    let metadata = parse_track_metadata(path_ref);
+    let cached_cover = cover_cache::load_cover(&state.cover_cache_dir, path_ref);
+
+    let metadata = parse_track_metadata_with_cover(path_ref, cached_cover);
 
     let track_data = TrackData {
         title: metadata.title.clone(),
@@ -67,6 +71,7 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
         album: (!metadata.album.is_empty()).then(|| metadata.album.clone()),
         genre: (!metadata.genre.is_empty()).then(|| metadata.genre.clone()),
         duration: duration.as_millis() as i64,
+        cover: metadata.cover.clone(),
     };
 
     let _ = state.store_cmd_tx.send(StoreCommand::RecordRecentTrack {

@@ -9,8 +9,10 @@ impl DbStore {
         &mut self,
         path: &Path,
         track_data: &TrackData,
+        cover_cache_path: Option<&Path>,
     ) -> rusqlite::Result<i64> {
         let path_string = path.to_string_lossy();
+        let cover_cache_path = cover_cache_path.map(|value| value.to_string_lossy().into_owned());
 
         let file_size = std::fs::metadata(path)
             .ok()
@@ -25,15 +27,20 @@ impl DbStore {
                 artist,
                 album,
                 genre,
-                duration
+                duration,
+                cover_cache_path
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
             ON CONFLICT(path) DO UPDATE SET
                 title = excluded.title,
                 artist = excluded.artist,
                 album = excluded.album,
                 genre = excluded.genre,
-                duration = excluded.duration",
+                duration = excluded.duration,
+                cover_cache_path = COALESCE(
+                                excluded.cover_cache_path,
+                                tracks.cover_cache_path
+                            )",
             params![
                 path_string.as_ref(),
                 file_size,
@@ -42,6 +49,7 @@ impl DbStore {
                 track_data.album,
                 track_data.genre,
                 track_data.duration,
+                cover_cache_path,
             ],
         )?;
 
@@ -79,6 +87,7 @@ impl DbStore {
                 t.bpm,
                 t.key,
                 t.play_count,
+                t.cover_cache_path,
                 r.played_at
              FROM recent_tracks r
              INNER JOIN tracks t ON t.id = r.track_id
@@ -105,9 +114,11 @@ impl DbStore {
                     bpm: row.get(8)?,
                     key: row.get(9)?,
                     play_count: row.get(10)?,
+                    cover_cache_path: row.get::<_, Option<String>>(11)?.map(PathBuf::from),
+
                     ..Default::default()
                 },
-                played_at: row.get(11)?,
+                played_at: row.get(12)?,
             })
         }) {
             Ok(rows) => rows,

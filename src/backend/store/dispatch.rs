@@ -1,6 +1,8 @@
+use super::cache::CacheStore;
 use crate::backend::state::AudioState;
 use crate::shared::command_types::StoreCommand;
 use crate::shared::event_types::AudioError;
+
 use crate::shared::event_types::{StoreEvent, StoreSender};
 
 use super::config::ConfigStore;
@@ -9,6 +11,7 @@ use super::db::DbStore;
 pub(crate) fn dispatch(
     db: &mut DbStore,
     config: &ConfigStore,
+    cache: &CacheStore,
     store_tx: &StoreSender,
     command: StoreCommand,
 ) {
@@ -33,7 +36,9 @@ pub(crate) fn dispatch(
 
         // Favorites
         StoreCommand::AddToFavorites { path, track_data } => {
-            match db.add_favorite(&path, &track_data) {
+            let cover_cache_path = cache.save_cover(&path, &track_data.cover);
+
+            match db.add_favorite(&path, &track_data, cover_cache_path.as_deref()) {
                 Ok(track_id) => {
                     match store_tx.try_broadcast(StoreEvent::FavoritesChanged {
                         track_id,
@@ -125,7 +130,9 @@ pub(crate) fn dispatch(
         },
 
         StoreCommand::RecordRecentTrack { path, track_data } => {
-            match db.record_recent_track(&path, &track_data) {
+            let cover_cache_path = cache.save_cover(&path, &track_data.cover);
+
+            match db.record_recent_track(&path, &track_data, cover_cache_path.as_deref()) {
                 Ok(track_id) => {
                     let _ = store_tx.try_broadcast(StoreEvent::RecentTrackChanged {
                         track_id,

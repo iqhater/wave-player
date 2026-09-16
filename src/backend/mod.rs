@@ -1,5 +1,6 @@
 pub mod analysis;
 mod commands;
+pub mod cover_cache;
 mod decoder;
 pub mod engine_v2;
 mod filters;

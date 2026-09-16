@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::thread;
@@ -21,6 +22,7 @@ pub fn run_audio_loop_v2(
     status_tx: StatusSender,
     store_cmd_tx: flume::Sender<StoreCommand>,
     error_tx: ErrorSender,
+    cover_cache_dir: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
     thread::spawn(move || {
         let sink_handle = match DeviceSinkBuilder::open_default_sink() {
@@ -33,8 +35,14 @@ pub fn run_audio_loop_v2(
 
         let player = Player::connect_new(&sink_handle.mixer());
 
-        let mut state =
-            AudioState::new(player, playback_progress, status_tx, store_cmd_tx, error_tx);
+        let mut state = AudioState::new(
+            player,
+            playback_progress,
+            status_tx,
+            store_cmd_tx,
+            error_tx,
+            cover_cache_dir,
+        );
 
         loop {
             if let Err(error) = playback::tick(&mut state) {

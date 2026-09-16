@@ -19,6 +19,8 @@ pub(crate) struct AudioState {
     pub(crate) status_tx: StatusSender,
     pub(crate) store_cmd_tx: flume::Sender<StoreCommand>,
     pub(crate) error_tx: ErrorSender,
+
+    pub(crate) cover_cache_dir: PathBuf,
 }
 
 impl AudioState {
@@ -28,6 +30,7 @@ impl AudioState {
         status_tx: StatusSender,
         store_cmd_tx: flume::Sender<StoreCommand>,
         error_tx: ErrorSender,
+        cover_cache_dir: PathBuf,
     ) -> Self {
         Self {
             player,
@@ -40,6 +43,7 @@ impl AudioState {
             status_tx,
             store_cmd_tx,
             error_tx,
+            cover_cache_dir,
         }
     }
     pub(crate) fn set_progress(&self, position: Duration) {

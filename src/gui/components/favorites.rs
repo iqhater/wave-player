@@ -24,6 +24,7 @@ pub fn FavoritesButton() -> Element {
     let mut album = use_signal(|| "".to_string());
     let mut genre = use_signal(|| "".to_string());
     let mut duration = use_signal(|| Duration::ZERO);
+    let mut cover = use_signal(Vec::<u8>::new);
 
     // Получаем путь текущего трека из PlayerEvent::Started.
     use_future(move || {
@@ -50,6 +51,7 @@ pub fn FavoritesButton() -> Element {
                     album.set(metadata.album);
                     genre.set(metadata.genre);
                     duration.set(d);
+                    cover.set(metadata.cover);
 
                     // Запрашиваем актуальное избранное для нового трека.
                     let _ = ctx.store_cmd_tx.read().send(StoreCommand::GetFavorites);
@@ -143,6 +145,7 @@ pub fn FavoritesButton() -> Element {
                             }
                         },
                         duration: i64::try_from(duration().as_millis()).unwrap_or(i64::MAX),
+                        cover: cover(),
                     };
 
                     let _ = ctx

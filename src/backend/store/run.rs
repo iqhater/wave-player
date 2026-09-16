@@ -34,7 +34,7 @@ pub fn run_store_loop(
 
         while let Ok(command) = store_rx.recv() {
             // run store commands
-            dispatch::dispatch(&mut db, &app_config, &store_tx, command);
+            dispatch::dispatch(&mut db, &app_config, &cache, &store_tx, command);
         }
     });
     Ok(())

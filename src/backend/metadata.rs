@@ -17,7 +17,8 @@ pub struct TrackMetadata {
 /// Parse metadata from audio file using audiotags.
 /// Falls back to filename parsing if tags are missing.
 pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
-    // Try audiotags first
+    parse_track_metadata_with_cover(path, None)
+    /* // Try audiotags first
     if let Ok(tag) = Tag::new().read_from_path(path) {
         let title = tag.title().map(|s| s.to_string()).filter(|s| !s.is_empty());
         let artist = tag
@@ -86,6 +87,85 @@ pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
         genre: "".to_string(),
         // duration: 0,
         cover: vec![],
+        track_path: path.to_string_lossy().into_owned(),
+    } */
+}
+
+pub fn parse_track_metadata_with_cover(
+    path: &Path,
+    mut cached_cover: Option<Vec<u8>>,
+) -> TrackMetadata {
+    if let Ok(tag) = Tag::new().read_from_path(path) {
+        let title = tag
+            .title()
+            .map(str::to_string)
+            .filter(|value| !value.is_empty());
+
+        let artist = tag
+            .artist()
+            .map(str::to_string)
+            .filter(|value| !value.is_empty());
+
+        let album = tag
+            .album_title()
+            .map(str::to_string)
+            .filter(|value| !value.is_empty());
+
+        let genre = tag
+            .genre()
+            .map(str::to_string)
+            .filter(|value| !value.is_empty());
+
+        // Do not parse album_cover() if the cache already contains it.
+        let cover = cached_cover.take().unwrap_or_else(|| {
+            tag.album_cover()
+                .map(|picture| picture.data.to_vec())
+                .unwrap_or_default()
+        });
+
+        if let (Some(title), Some(artist)) = (title.clone(), artist.clone()) {
+            return TrackMetadata {
+                artist,
+                title,
+                album: album.unwrap_or_default(),
+                genre: genre.unwrap_or_default(),
+                cover,
+                track_path: path.to_string_lossy().into_owned(),
+            };
+        }
+
+        let file_stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let (parsed_artist, parsed_title) = parse_filename(&file_stem);
+
+        return TrackMetadata {
+            artist: artist.unwrap_or(parsed_artist),
+            title: title.unwrap_or(parsed_title),
+            album: album.unwrap_or_default(),
+            genre: genre.unwrap_or_default(),
+            cover,
+            track_path: path.to_string_lossy().into_owned(),
+        };
+    }
+
+    let file_stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Unknown")
+        .to_string();
+
+    let (artist, title) = parse_filename(&file_stem);
+
+    TrackMetadata {
+        artist,
+        title,
+        album: String::new(),
+        genre: String::new(),
+        cover: cached_cover.unwrap_or_default(),
         track_path: path.to_string_lossy().into_owned(),
     }
 }
