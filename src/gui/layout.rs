@@ -50,6 +50,8 @@ pub struct PlaybackUIState {
     pub duration_secs: Signal<f32>,
     pub has_track: Signal<bool>,
     pub is_playing: Signal<bool>,
+    pub speed: Signal<f32>,
+    pub preserve_pitch: Signal<bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -101,11 +103,16 @@ pub fn RootLayout() -> Element {
     let loop_end = use_signal(|| 0.0_f32);
     let loop_enabled = use_signal(|| false);
 
+    let mut speed = use_signal(|| ctx.config.read().audio.speed as f32);
+    let mut preserve_pitch = use_signal(|| ctx.config.read().audio.preserve_pitch);
+
     use_context_provider(|| PlaybackUIState {
         position_secs,
         duration_secs,
         has_track,
         is_playing,
+        speed,
+        preserve_pitch,
     });
 
     use_context_provider(|| LoopUIState {
@@ -137,6 +144,7 @@ pub fn RootLayout() -> Element {
     // Слушаем рантайм-обновления от бэкенда
     use_future(move || {
         let mut store_event_rx = ctx.store_event_rx.read().clone();
+
         async move {
             while let Some(store_event) = store_event_rx.next().await {
                 match store_event {
@@ -150,7 +158,12 @@ pub fn RootLayout() -> Element {
 
                         // Snap не может быть включён при отключённой сетке.
                         beat_grid_snap.set(grid_enabled && config.ui.beat_grid_snap);
+
+                        // Синхронизируем UI-состояние аудионастроек с конфигурацией.
+                        speed.set(config.audio.speed.clamp(0.25, 2.0));
+                        preserve_pitch.set(config.audio.preserve_pitch);
                     }
+
                     _ => {}
                 }
             }

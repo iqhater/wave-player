@@ -2,7 +2,6 @@ use crate::PlayerContext;
 use crate::shared::command_types::{PlayerCommand, StoreCommand};
 use crate::shared::event_types::{PlayerEvent, StoreEvent};
 use std::path::PathBuf;
-use std::time::Duration;
 
 use crate::shared::store_types::Track;
 use dioxus::prelude::*;
@@ -144,46 +143,53 @@ pub fn Favorites() -> Element {
 
             // Заголовки колонок.
             div {
-                class: "w-full grid {FAVORITES_GRID_COLUMNS} items-center divide-x divide-outline-variant/50 gap-2 px-3 mt-4 text-xs font-semibold text-secondary uppercase",
-
-                div {}
-                div {}
+                class: "w-full min-w-0 flex flex-col gap-3 mt-4",
+                style: "max-height: 588px; overflow-y: auto; align-content: flex-start; scrollbar-gutter: stable both-edges;",
 
                 div {
-                    class: "min-w-0",
-                    "Title"
-                }
+                    class: "sticky top-0 z-10 w-full bg-surface grid {FAVORITES_GRID_COLUMNS} items-center \
+                            divide-x divide-outline-variant/50 gap-2 px-3 \
+                            text-xs font-semibold text-secondary uppercase",
 
-                div {
-                    class: "min-w-0",
-                    "Artist"
-                }
+                    div {}
+                    div {}
 
-                div {
-                    class: "hidden md:block",
-                    "Album"
-                }
+                    div {
+                        class: "min-w-0",
+                        "Title"
+                    }
 
-                div {
-                    class: "hidden md:block text-center",
-                    "BPM"
-                }
+                    div {
+                        class: "min-w-0",
+                        "Artist"
+                    }
 
-                div {
-                    class: "hidden md:block text-center",
-                    "Key"
-                }
+                    div {
+                        class: "hidden md:block",
+                        "Album"
+                    }
 
-                div {
-                    class: "hidden md:block text-center",
-                    "Plays"
-                }
+                    div {
+                        class: "hidden md:block text-center",
+                        "BPM"
+                    }
 
-                div {
-                    class: "hidden md:block text-center",
-                    "Duration"
+                    div {
+                        class: "hidden md:block text-center",
+                        "Key"
+                    }
+
+                    div {
+                        class: "hidden md:block text-center",
+                        "Plays"
+                    }
+
+                    div {
+                        class: "hidden md:block text-center",
+                        "Duration"
+                    }
+                    div {}
                 }
-                div {}
             }
 
             if tracks_snapshot.is_empty() {

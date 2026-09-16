@@ -141,6 +141,21 @@
   }
 }
 
+@layer components {
+  /* Recent Tracks и Favorites начинаются сверху */
+  main:has(> div > div > section) > div {
+    justify-content: flex-start;
+  }
+
+  /* Максимум 10 треков с прокруткой */
+  main > div > div > section > div:nth-of-type(3):has(> div > button) {
+    max-height: calc(10 * 48px + 9 * 12px);
+    overflow-y: auto;
+    align-content: flex-start;
+    scrollbar-gutter: stable both-edges;
+  }
+}
+
 @layer utilities {
     /* App icons font */
   .material-symbols-outlined {

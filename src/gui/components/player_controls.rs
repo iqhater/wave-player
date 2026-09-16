@@ -2,8 +2,10 @@ use super::favorites::FavoritesButton;
 use super::filters_spatial::FiltersAndSpatial;
 
 use crate::PlayerContext;
+use crate::gui::layout::PlaybackUIState;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::PlayerEvent;
+
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use std::time::Duration;
@@ -207,8 +209,12 @@ pub fn ControlIconButton(
 #[component]
 fn SpeedControl() -> Element {
     let ctx = use_context::<PlayerContext>();
-    let mut speed = use_signal(|| ctx.config.read().audio.speed as f32);
-    let mut is_preserve_pitch = use_signal(|| ctx.config.read().audio.preserve_pitch);
+    let playback = use_context::<PlaybackUIState>();
+
+    // Состояние принадлежит RootLayout и не сбрасывается
+    // при пересоздании PlayerControls.
+    let mut speed = playback.speed;
+    let mut is_preserve_pitch = playback.preserve_pitch;
 
     let mut show_speed_popup = use_signal(|| false);
 

@@ -101,39 +101,44 @@ pub fn RecentTracks() -> Element {
             }
 
             div {
-                class: "w-full grid {RECENT_GRID_COLUMNS} items-center \
-                        divide-x divide-outline-variant/50 gap-2 px-3 mt-4 \
-                        text-xs font-semibold text-secondary uppercase",
-
-                div {}
-                div {}
+                class: "w-full min-w-0 flex flex-col gap-3 mt-4",
+                style: "max-height: 588px; overflow-y: auto; align-content: flex-start; scrollbar-gutter: stable both-edges;",
 
                 div {
-                    class: "min-w-0",
-                    "Title"
-                }
+                    class: "sticky top-0 z-10 w-full bg-surface grid {RECENT_GRID_COLUMNS} items-center \
+                            divide-x divide-outline-variant/50 gap-2 px-3 \
+                            text-xs font-semibold text-secondary uppercase",
 
-                div {
-                    class: "min-w-0",
-                    "Artist"
-                }
+                    div {}
+                    div {}
 
-                div {
-                    class: "hidden md:block",
-                    "Album"
-                }
+                    div {
+                        class: "min-w-0",
+                        "Title"
+                    }
 
-                div {
-                    class: "hidden md:block text-center whitespace-nowrap",
-                    "Last played"
-                }
+                    div {
+                        class: "min-w-0",
+                        "Artist"
+                    }
 
-                div {
-                    class: "hidden md:block text-center",
-                    "Duration"
-                }
+                    div {
+                        class: "hidden md:block",
+                        "Album"
+                    }
 
-                div {}
+                    div {
+                        class: "hidden md:block text-center whitespace-nowrap",
+                        "Last played"
+                    }
+
+                    div {
+                        class: "hidden md:block text-center",
+                        "Duration"
+                    }
+
+                    div {}
+                }
             }
 
             if tracks_snapshot.is_empty() {
