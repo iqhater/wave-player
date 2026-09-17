@@ -248,7 +248,9 @@ impl<S: Source> Iterator for TimeStretchSource<S> {
 
 impl<S: Source> Source for TimeStretchSource<S> {
     fn current_span_len(&self) -> Option<usize> {
-        None
+        // Ограниченный span нужен rodio, чтобы периодически заново
+        // проверять sample rate источника при переходе между треками.
+        Some(OUTPUT_FRAMES_PER_BLOCK * self.channels.get() as usize)
     }
 
     fn channels(&self) -> NonZeroU16 {
