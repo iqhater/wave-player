@@ -1,7 +1,6 @@
-use crate::PlayerContext;
-use crate::shared::event_types::PlayerEvent;
+use crate::gui::layout::PlaybackUIState;
+
 use dioxus::prelude::*;
-use futures_util::StreamExt;
 use std::fs;
 use std::path::PathBuf;
 
@@ -14,30 +13,17 @@ fn jpeg_data_url(bytes: &[u8]) -> String {
 
 #[component]
 pub fn AlbumArt() -> Element {
-    let ctx = use_context::<PlayerContext>();
+    let playback = use_context::<PlaybackUIState>();
 
-    let mut cover_bytes = use_signal(|| Vec::<u8>::new());
+    let img_src = playback
+        .metadata
+        .read()
+        .as_ref()
+        .filter(|metadata| !metadata.cover.is_empty())
+        .map(|metadata| jpeg_data_url(&metadata.cover))
+        .unwrap_or_default();
 
-    use_future(move || {
-        let mut status_rx = ctx.status_rx.read().clone();
-        async move {
-            while let Some(status) = status_rx.next().await {
-                match status {
-                    PlayerEvent::Started { metadata, .. } => {
-                        cover_bytes.set(metadata.cover);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    });
-
-    let has_cover = cover_bytes.read().len() > 0;
-    let img_src = if has_cover {
-        jpeg_data_url(&cover_bytes.read())
-    } else {
-        String::new()
-    };
+    let has_cover = !img_src.is_empty();
 
     rsx! {
         div { class: "relative group w-full max-w-[300px]",

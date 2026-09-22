@@ -1,5 +1,5 @@
 use crate::PlayerContext;
-use crate::shared::event_types::PlayerEvent;
+use crate::shared::event_types::{BeatGridData, PlayerEvent};
 // use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -11,6 +11,8 @@ const BEAT_GRID_JS: &str = r#"
         duration: data.duration,
         snap: data.snap,
         offset: Number(data.offset) || 0,
+        beats: data.beats || [],
+        bars: data.bars || [],
     };
 
     const MINP = 20;   // минимальный отступ между линиями в px
@@ -58,45 +60,78 @@ const BEAT_GRID_JS: &str = r#"
         let endTime = startTime + visible;
         let pps = width / visible;
 
-        let beat = 60 / bg.bpm;
-        let step = gridStep(pps);
+        const beats = Array.isArray(bg.beats)
+            ? bg.beats
+            : [];
 
-        const firstGridLine =
-            firstGridLineAtOrAfter(startTime, step);
+        const bars = Array.isArray(bg.bars)
+            ? bg.bars
+            : [];
 
-        for (let t = firstGridLine; t <= endTime + 1e-6; t += step) {
-            let pct = (t - startTime) / visible;
-            if (pct < 0 || pct > 1) continue;
-            let x = pct * width;
+            const beatDuration =
+                60.0 / bg.bpm;
 
-            const offset =
-                window.beatGrid.offset || 0;
+            const beatPhase =
+                Number.isFinite(Number(bg.beats?.[0]))
+                    ? Number(bg.beats[0])
+                    : Number(bg.offset) || 0;
 
-            const bar = 4 * beat;
+            const barPhase =
+                Number.isFinite(Number(bg.bars?.[0]))
+                    ? Number(bg.bars[0])
+                    : beatPhase;
 
-            const barPosition =
-                (t - offset) / bar;
+            const barDuration =
+                beatDuration * 4.0;
 
-            const beatPosition =
-                (t - offset) / beat;
+            let gridInterval = beatDuration;
+            let gridPhase = beatPhase;
+            let gridColor = "rgba(255,255,255,0.22)";
+            let gridWidth = 1.0;
 
-            const isBar =
-                Math.abs(
-                    barPosition - Math.round(barPosition)
-                ) < 1e-4;
+            // At zoom out, use bar lines instead of individual beats.
+            if (gridInterval * pps < MINP * 1.5) {
+                gridInterval = barDuration;
+                gridPhase = barPhase;
+                gridColor = "rgba(255,255,255,0.45)";
+                gridWidth = 1.4;
+            }
 
-            const isBeat =
-                !isBar &&
-                Math.abs(
-                    beatPosition - Math.round(beatPosition)
-                ) < 1e-4;
+            // If bars are still too dense, skip every second/fourth bar.
+            while (gridInterval * pps < MINP * 1.5) {
+                gridInterval *= 2.0;
+            }
 
-            ctx.strokeStyle = isBar ? "rgba(255,255,255,0.5)"
-                          : isBeat ? "rgba(255,255,255,0.25)"
-                          : "rgba(255,255,255,0.10)";
-            ctx.lineWidth = isBar ? 1.4 : 1;
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-        }
+            const firstIndex = Math.ceil(
+                (startTime - gridPhase) / gridInterval - 0.000001
+            );
+
+            const lastIndex = Math.floor(
+                (endTime - gridPhase) / gridInterval + 0.000001
+            );
+
+            for (
+                let index = firstIndex;
+                index <= lastIndex;
+                index++
+            ) {
+                const time =
+                    gridPhase + index * gridInterval;
+
+                const pct =
+                    (time - startTime) / visible;
+
+                const x =
+                    pct * width;
+
+                ctx.strokeStyle = gridColor;
+                ctx.lineWidth = gridWidth;
+
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
     };
 
     // Превращает secs в ближайшую линию сетки. Уважает настройку snap.
@@ -117,82 +152,27 @@ const BEAT_GRID_JS: &str = r#"
             );
         }
 
-        const canvas =
-            document.getElementById("beat-grid-canvas");
+        const beatDuration =
+            60.0 / grid.bpm;
 
-        const width =
-            canvas?.clientWidth || 400;
+        const beatPhase =
+            Number.isFinite(Number(grid.beats?.[0]))
+                ? Number(grid.beats[0])
+                : Number(grid.offset) || 0;
 
-        function getViewport() {
-            const duration = window.beatGrid.duration;
-            const zoom = window.waveZoom || 1.0;
-            const scroll = window.waveScroll || 0.0;
-
-            const visibleDuration = duration / zoom;
-
-            const startTime =
-                scroll * (duration - visibleDuration);
-
-            const endTime =
-                startTime + visibleDuration;
-
-            return {
-                startTime,
-                endTime,
-                visibleDuration,
-            };
-        }
-
-        const viewport = getViewport();
-
-        const pixelsPerSecond =
-            width / viewport.visibleDuration;
-
-        const step =
-            gridStep(pixelsPerSecond);
-
-        /*
-         * Используем тот же первый grid line,
-         * с которого начинается отрисовка.
-         *
-         * Это важно: snap и canvas теперь используют
-         * абсолютно одинаковые координаты.
-         */
-        const firstGridLine =
-            Math.ceil(
-                (viewport.startTime - 0.000001) / step
-            ) * step;
-
-        /*
-         * Проверяем ближайшие линии около точки клика.
-         * Достаточно проверить floor и ceil.
-         */
-         const offset =
-             window.beatGrid.offset || 0;
-
-        const relativeIndex =
-            (seconds - offset) / step;
-
-        const lowerIndex =
-            Math.floor(relativeIndex);
-
-        const upperIndex =
-            Math.ceil(relativeIndex);
-
-        const lowerLine =
-            firstGridLine + lowerIndex * step;
-
-        const upperLine =
-            firstGridLine + upperIndex * step;
+        const beatIndex =
+            Math.round(
+                (seconds - beatPhase) / beatDuration
+            );
 
         const snapped =
-            Math.round(relativeIndex) * step +
-            offset;
+            beatPhase + beatIndex * beatDuration;
 
         return Math.max(
             0,
             Math.min(grid.duration, snapped)
         );
+
     };
 
     window.drawBeatGrid();
@@ -203,6 +183,7 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
     let ctx = use_context::<PlayerContext>();
     let mut bpm = use_signal(|| 0.0f32);
     let mut beat_offset = use_signal(|| 0.0f32);
+    let mut beat_grid = use_signal(|| None::<BeatGridData>);
 
     // Слушаем BPM из движка
     use_future(move || {
@@ -212,15 +193,17 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
                 match status {
                     PlayerEvent::BpmKeyDetected {
                         bpm: b,
-                        beat_offset: offset,
+                        beat_grid: grid,
                         ..
                     } => {
                         bpm.set(b);
-                        beat_offset.set(offset);
+                        beat_offset.set(grid.offset);
+                        beat_grid.set(Some(grid));
                     }
                     PlayerEvent::Started { .. } => {
                         bpm.set(0.0);
                         beat_offset.set(0.0);
+                        beat_grid.set(None);
                     }
                     _ => {}
                 }
@@ -237,11 +220,15 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
 
         spawn(async move {
             let eval = dioxus::document::eval(BEAT_GRID_JS);
+            let grid = beat_grid();
+
             let _ = eval.send(serde_json::json!({
                 "bpm": b,
                 "duration": d,
                 "snap": s,
                 "offset": offset,
+                "beats": grid.as_ref().map(|grid| &grid.beats),
+                "bars": grid.as_ref().map(|grid| &grid.bars),
             }));
         });
     });

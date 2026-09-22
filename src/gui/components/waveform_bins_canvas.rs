@@ -1,5 +1,6 @@
 use crate::PlayerContext;
-use crate::shared::event_types::PlayerEvent;
+use crate::shared::command_types::PlayerCommand;
+use crate::shared::event_types::{PlayerEvent, WaveformEnvelope};
 use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -10,11 +11,20 @@ const WAVEFORM_JS: &str = r#"
     let data = await dioxus.recv();
 
     let targetPeaks = data.peaks || [];
-    let progress = data.progress || 0;
+    //let progress = data.progress || 0;
     let duration = data.duration || 0;
     let reset = data.reset || false;
+    const detail = data.detail || null;
 
     let canvas = document.getElementById("waveform-canvas");
+
+    if (typeof data.progress === "number") {
+        window.waveProgress = data.progress;
+    }
+
+    if (typeof window.waveProgress !== "number") {
+        window.waveProgress = 0;
+    }
 
     if (!canvas) {
         return;
@@ -134,7 +144,8 @@ const WAVEFORM_JS: &str = r#"
         }
 
         const cursorTime =
-            progress * (window.waveDuration || 0);
+            (window.waveProgress || 0) *
+            (window.waveDuration || 0);
 
         const cursorPct =
             window.waveViewportPctAtTime(cursorTime);
@@ -214,7 +225,8 @@ const WAVEFORM_JS: &str = r#"
 
         const newZoom = Math.max(
             1.0,
-            Math.min(80.0, zoom * factor)
+           // Math.min(80.0, zoom * factor)
+            Math.min(1_000_000.0, zoom * factor)
         );
 
         const visibleOld = 1.0 / zoom;
@@ -268,6 +280,186 @@ const WAVEFORM_JS: &str = r#"
         window.waveformAnimId = requestAnimationFrame(animateFrame);
     };
 
+    window.setWaveViewport = function (
+        nextZoom,
+        centerPercent
+    ) {
+        const parsedZoom = Number(nextZoom);
+        const parsedCenter = Number(centerPercent);
+
+        const zoom =
+            Number.isFinite(parsedZoom)
+                ? Math.max(1.0, parsedZoom)
+                : 1.0;
+
+        const center =
+            Number.isFinite(parsedCenter)
+                ? Math.max(0, Math.min(100, parsedCenter)) / 100
+                : 0.5;
+
+        const visibleFraction = 1.0 / zoom;
+        const maxStart = Math.max(0, 1.0 - visibleFraction);
+
+        const startFraction = Math.max(
+            0,
+            Math.min(
+                maxStart,
+                center - visibleFraction / 2.0
+            )
+        );
+
+        window.waveZoom = zoom;
+
+        window.waveScroll =
+            maxStart > 0
+                ? startFraction / maxStart
+                : 0.0;
+
+        updateWaveViewportVariables();
+
+        if (window.drawBeatGrid) {
+            window.drawBeatGrid();
+        }
+
+        if (window.waveformAnimId) {
+                cancelAnimationFrame(window.waveformAnimId);
+        }
+
+        window.waveformAnimId =
+                requestAnimationFrame(animateFrame);
+    };
+
+    window.panBy = function (deltaPx) {
+        const canvas = document.getElementById("waveform-canvas");
+
+        if (!canvas) {
+            return;
+        }
+
+        const width = canvas.clientWidth || 1;
+        const zoom = window.waveZoom || 1.0;
+        const visibleFraction = 1.0 / zoom;
+        const maxStart = 1.0 - visibleFraction;
+
+        if (maxStart <= 0) {
+            return;
+        }
+
+        const currentStart =
+            (window.waveScroll || 0.0) * maxStart;
+
+        const shift =
+            (deltaPx / width) * visibleFraction;
+
+        const nextStart =
+            Math.max(0, Math.min(maxStart, currentStart + shift));
+
+        window.waveScroll =
+            nextStart / maxStart;
+
+        updateWaveViewportVariables();
+
+        if (window.drawBeatGrid) {
+            window.drawBeatGrid();
+        }
+
+        if (window.waveformAnimId) {
+            cancelAnimationFrame(window.waveformAnimId);
+        }
+
+        window.waveformAnimId =
+            requestAnimationFrame(animateFrame);
+    };
+
+    window.handleWaveWheel = function (
+        mousePct,
+        deltaX,
+        deltaY,
+        shiftKey
+    ) {
+        const hasHorizontalDelta =
+            Math.abs(deltaX) > Math.abs(deltaY) &&
+            Math.abs(deltaX) > 0.01;
+
+        const shouldPan =
+            hasHorizontalDelta ||
+            (shiftKey && Math.abs(deltaY) > 0.01);
+
+        if (shouldPan) {
+            const panDelta =
+                hasHorizontalDelta ? deltaX : deltaY;
+
+            window.panBy(panDelta);
+        } else {
+            const factor =
+                deltaY < 0.0 ? 1.15 : 1.0 / 1.15;
+
+            window.zoomAt(mousePct, factor);
+        }
+
+        return {
+            zoom: window.waveZoom || 1.0,
+            scroll: window.waveScroll || 0.0
+        };
+    };
+
+    function drawDetailWaveform(detail, viewportStart, viewportSize) {
+        const points = detail.points;
+        const totalFrames = detail.totalFrames;
+
+        const detailStart =
+            detail.startFrame / totalFrames;
+
+        const detailEnd =
+            detail.endFrame / totalFrames;
+
+        const pointSize =
+            (detailEnd - detailStart) / points.length;
+
+        for (let index = 0; index < points.length; index++) {
+            const point = points[index];
+
+            const pointPosition =
+                detailStart + index * pointSize;
+
+            const x =
+                ((pointPosition - viewportStart) / viewportSize) * width;
+
+            const nextX =
+                ((pointPosition + pointSize - viewportStart) / viewportSize) * width;
+
+            if (nextX < 0 || x > width) {
+                continue;
+            }
+
+            const min = Math.max(-1, Math.min(1, point.min));
+            const max = Math.max(-1, Math.min(1, point.max));
+
+            const yTop =
+                height / 2 - max * height / 2;
+
+            const yBottom =
+                height / 2 - min * height / 2;
+
+            const barWidth =
+                Math.max(1, nextX - x);
+
+            const played =
+                pointPosition <= (window.waveProgress || 0);
+
+            ctx.fillStyle = played
+                ? "rgba(90, 122, 122, 1)"
+                : "rgba(196, 200, 192, 1)";
+
+            ctx.fillRect(
+                x,
+                yTop,
+                barWidth,
+                Math.max(1, yBottom - yTop),
+            );
+        }
+    }
+
     function animateFrame() {
         ctx.clearRect(0, 0, width, height);
 
@@ -292,6 +484,12 @@ const WAVEFORM_JS: &str = r#"
 
         const endFraction =
             startFraction + visibleFraction;
+
+        if (detail && detail.points && detail.points.length > 0) {
+            drawDetailWaveform(detail, startFraction, visibleFraction);
+            updateWaveViewportVariables();
+            return;
+        }
 
         /*
          * Дробные индексы важны: grid и waveform должны
@@ -380,7 +578,7 @@ const WAVEFORM_JS: &str = r#"
             const y =
                 (height - barHeight) / 2;
 
-            if ((i / totalBins) <= progress) {
+            if ((i / totalBins) <= (window.waveProgress || 0)) {
                 ctx.fillStyle =
                     "rgba(90, 122, 122, 1)";
             } else {
@@ -389,7 +587,7 @@ const WAVEFORM_JS: &str = r#"
             }
 
             /* More contrast bars color
-                if ((i / totalBins) <= progress) {
+                if ((i / totalBins) <= (window.waveProgress || 0)) {
                     ctx.fillStyle = "rgba(110, 165, 165, 0.95)";
                 } else {
                     ctx.fillStyle = "rgba(205, 210, 204, 0.78)";
@@ -428,9 +626,65 @@ const WAVEFORM_JS: &str = r#"
         }
     }
 
+    window.renderWaveform = function () {
+        if (window.waveformAnimId) {
+            return;
+        }
+
+        window.waveformAnimId =
+            requestAnimationFrame(animateFrame);
+    };
+
+    if (
+        typeof data.zoom === "number" &&
+        typeof data.viewCenter === "number" &&
+        window.setWaveViewport
+    ) {
+        window.setWaveViewport(
+            data.zoom,
+            data.viewCenter
+        );
+    }
+
     updateWaveViewportVariables();
     animateFrame();
 "#;
+
+const WAVEFORM_VIEWPORT_JS: &str = r#"
+let data = await dioxus.recv();
+
+if (window.setWaveViewport) {
+    window.setWaveViewport(
+        data.zoom,
+        data.viewCenter
+    );
+}
+"#;
+
+const WAVEFORM_PROGRESS_JS: &str = r#"
+let data = await dioxus.recv();
+
+if (typeof data.progress === "number") {
+    window.waveProgress = data.progress;
+
+    if (window.updateWaveViewportVariables) {
+        window.updateWaveViewportVariables();
+    }
+
+    if (window.renderWaveform) {
+        window.renderWaveform();
+    }
+}
+"#;
+
+#[derive(Clone, Debug)]
+struct DetailWaveform {
+    start_frame: usize,
+    end_frame: usize,
+    total_frames: usize,
+    sample_rate: u32,
+    points: Vec<WaveformEnvelope>,
+}
 
 #[component]
 pub fn WaveformBinsCanvas(
@@ -438,16 +692,27 @@ pub fn WaveformBinsCanvas(
     cursor_progress: ReadSignal<f32>,
     mut zoom: Signal<f32>,
     mut view_center: Signal<f32>,
+    mut waveform_peaks: Signal<Vec<f32>>,
 ) -> Element {
     let ctx = use_context::<PlayerContext>();
     let mut position_secs = use_signal(|| 0.0);
     let num_bins = 500;
 
-    // Локальный стейт для хранения реальных высот столбиков
-    let mut waveform_peaks = use_signal(|| vec![0.0f32; num_bins]);
+    let mut detail_waveform = use_signal(|| None::<DetailWaveform>);
+    let mut active_detail_request = use_signal(|| None::<u64>);
+    let mut next_detail_request = use_signal(|| 0_u64);
 
     // Сигнал сброса зума при загрузке нового трека
     let mut reset_zoom = use_signal(|| false);
+
+    let mut detail_request_pending = use_signal(|| false);
+
+    use_effect(move || {
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::RequestWaveformOverview);
+    });
 
     // Фоновый слушатель событий от аудио-ядра
     use_future(move || {
@@ -457,11 +722,15 @@ pub fn WaveformBinsCanvas(
                 match status {
                     PlayerEvent::Started { .. } => {
                         waveform_peaks.set(vec![0.0f32; num_bins]);
+                        detail_waveform.set(None);
+                        active_detail_request.set(None);
 
                         // Сбрасываем зум в исходное состояние при запуске нового трека
                         reset_zoom.set(true);
                         zoom.set(1.0);
                         view_center.set(50.0);
+
+                        detail_request_pending.set(false);
                     }
                     PlayerEvent::WaveformChunkReady {
                         chunk,
@@ -480,6 +749,27 @@ pub fn WaveformBinsCanvas(
                             }
                         });
                     }
+                    PlayerEvent::WaveformDetailReady {
+                        request_id,
+                        start_frame,
+                        end_frame,
+                        total_frames,
+                        sample_rate,
+                        points,
+                    } => {
+                        if active_detail_request() == Some(request_id) {
+                            detail_waveform.set(Some(DetailWaveform {
+                                start_frame,
+                                end_frame,
+                                total_frames,
+                                sample_rate,
+                                points,
+                            }));
+
+                            detail_request_pending.set(false);
+                        }
+                    }
+
                     _ => {}
                 }
             }
@@ -508,43 +798,128 @@ pub fn WaveformBinsCanvas(
                 }
             }
         }
-        /* let pos = ctx.playback_progress.read().clone();
-        async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                position_secs.set(pos.load(Ordering::Relaxed) as f32 / 1000.0);
-            }
-        } */
     });
 
-    // Перерисовка canvas при изменении пиков, позиции или зума
     use_effect(move || {
-        let p_vec = waveform_peaks.read().clone();
-
-        // Прогресс из реального времени воспроизведения
         let current_pos = position_secs();
         let total_dur = total_duration();
-        let progress_ratio = if total_dur > 0.0 {
+
+        let progress = if total_dur > 0.0 {
             (current_pos / total_dur).clamp(0.0, 1.0)
         } else {
             0.0
         };
 
-        // let zoom_data = zoom();
+        spawn(async move {
+            let eval = dioxus::document::eval(WAVEFORM_PROGRESS_JS);
+
+            let _ = eval.send(serde_json::json!({
+                "progress": progress,
+            }));
+        });
+    });
+
+    // Перерисовка canvas при изменении пиков, позиции или зума
+    use_effect(move || {
+        let peaks = waveform_peaks.read().clone();
+        let total_dur = total_duration();
         let do_reset = reset_zoom();
+
         if do_reset {
             reset_zoom.set(false);
         }
 
+        let detail = detail_waveform().map(|data| {
+            serde_json::json!({
+                "startFrame": data.start_frame,
+                "endFrame": data.end_frame,
+                "totalFrames": data.total_frames,
+                "sampleRate": data.sample_rate,
+                "points": data.points,
+            })
+        });
+
         spawn(async move {
             let eval = dioxus::document::eval(WAVEFORM_JS);
+
             let _ = eval.send(serde_json::json!({
-                "peaks": p_vec,
-                "progress": progress_ratio,
+                "peaks": peaks,
                 "duration": total_dur,
-                "reset": do_reset
+                "reset": do_reset,
+                "detail": detail,
             }));
         });
+    });
+
+    const DETAIL_ZOOM_THRESHOLD: f32 = 8.0;
+
+    use_effect(move || {
+        let current_zoom = zoom();
+        let current_view_center = view_center();
+
+        spawn(async move {
+            let eval = dioxus::document::eval(WAVEFORM_VIEWPORT_JS);
+
+            let _ = eval.send(serde_json::json!({
+                "zoom": current_zoom,
+                "viewCenter": current_view_center,
+            }));
+        });
+    });
+
+    use_effect(move || {
+        let duration = total_duration();
+        let current_zoom = zoom();
+        let center_percent = view_center();
+
+        if duration <= 0.0 {
+            return;
+        }
+
+        if current_zoom < DETAIL_ZOOM_THRESHOLD {
+            detail_waveform.set(None);
+            active_detail_request.set(None);
+            detail_request_pending.set(false);
+            return;
+        }
+
+        let visible_fraction = 1.0 / current_zoom;
+
+        let center_fraction = (center_percent / 100.0).clamp(0.0, 1.0);
+
+        // Load a wider range to avoid decoding on every follow movement.
+        let request_fraction = (visible_fraction * 3.0).min(1.0);
+
+        let start_fraction =
+            (center_fraction - request_fraction / 2.0).clamp(0.0, 1.0 - request_fraction);
+
+        let end_fraction = (start_fraction + request_fraction).min(1.0);
+
+        if detail_request_pending() {
+            return;
+        }
+
+        let request_id = next_detail_request.with_mut(|id| {
+            *id = id.wrapping_add(1);
+            *id
+        });
+
+        active_detail_request.set(Some(request_id));
+        detail_request_pending.set(true);
+
+        let start = Duration::from_secs_f32(duration * start_fraction);
+
+        let end = Duration::from_secs_f32(duration * end_fraction);
+
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::RequestWaveformDetail {
+                request_id,
+                start,
+                end,
+                points: 4096,
+            });
     });
 
     // Clean up waveform animation resources on drop
@@ -572,32 +947,48 @@ pub fn WaveformBinsCanvas(
 
             // Обработка вертикального колесика мыши (зум)
             onwheel: move |e| {
-                let delta_y = e.delta().strip_units().y;
+                let delta = e.delta().strip_units();
+                let delta_x = delta.x;
+                let delta_y = delta.y;
+                let shift_key = e.modifiers().shift();
                 let click_x = e.element_coordinates().x as f32;
-
-                // factor: delta_y < 0 — приближение
-                let factor = if delta_y < 0.0 { 1.15 } else { 1.0 / 1.15 };
 
                 // Вся логика зума — в JS (синхронно, без гонок и без запроса ширины)
                 let mut eval = dioxus::document::eval(
                     r#"
                     let data = await dioxus.recv();
-                    let canvas = document.getElementById("waveform-canvas");
-                    if (!canvas || !window.zoomAt) return;
-                    let width = canvas.clientWidth || 1;
-                    let pct = Math.max(0, Math.min(1, data.x / width));
-                    window.zoomAt(pct, data.factor);
 
-                    dioxus.send({
-                        zoom: window.waveZoom || 1,
-                        scroll: window.waveScroll || 0
-                    });
+                    const canvas =
+                        document.getElementById("waveform-canvas");
+
+                    if (!canvas || !window.handleWaveWheel) {
+                        return;
+                    }
+
+                    const width =
+                        canvas.clientWidth || 1;
+
+                    const pct =
+                        Math.max(0, Math.min(1, data.x / width));
+
+                    const result =
+                        window.handleWaveWheel(
+                            pct,
+                            data.deltaX,
+                            data.deltaY,
+                            data.shiftKey
+                        );
+
+                    dioxus.send(result);
                     "#
                 );
                 let _ = eval.send(serde_json::json!({
                     "x": click_x,
-                    "factor": factor
+                    "deltaX": delta_x,
+                    "deltaY": delta_y,
+                    "shiftKey": shift_key,
                 }));
+
                 spawn(async move {
                     if let Ok(serde_json::Value::Object(data)) = eval.recv().await {
                         let new_zoom = data

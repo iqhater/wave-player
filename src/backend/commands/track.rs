@@ -40,7 +40,7 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
     let decoder = open_file_with_decoder(path_ref)?;
 
     let duration = decoder.total_duration().unwrap_or(Duration::ZERO);
-    println!("Duration {:?}", duration);
+    // println!("Duration {:?}", duration);
 
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
@@ -93,7 +93,12 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
 
     start_loudness_analysis(path.clone(), &state.status_tx);
 
-    start_bpm_analysis(path, state.status_tx.clone(), state.store_cmd_tx.clone());
+    start_bpm_analysis(
+        path,
+        duration,
+        state.status_tx.clone(),
+        state.store_cmd_tx.clone(),
+    );
 
     Ok(())
 }
@@ -126,11 +131,18 @@ fn start_waveform_analysis(
 
 fn start_bpm_analysis(
     path: PathBuf,
+    duration: Duration,
     status_tx: crate::shared::event_types::StatusSender,
     store_cmd_tx: flume::Sender<StoreCommand>,
 ) {
     std::thread::spawn(move || {
-        let Ok((samples, sample_rate, _duration)) = load_samples_mono(&path, 90) else {
+        let analysis_limit = duration
+            .as_secs()
+            .saturating_add(u64::from(duration.subsec_nanos() > 0))
+            .min(u32::MAX as u64) as u32;
+
+        let Ok((samples, sample_rate, _duration)) = load_samples_mono(&path, analysis_limit.max(1))
+        else {
             return;
         };
 
@@ -146,9 +158,76 @@ fn start_bpm_analysis(
 
         let _ = status_tx.try_broadcast(PlayerEvent::BpmKeyDetected {
             bpm: result.bpm,
-            beat_offset: result.beat_offset,
+            beat_grid: result.beat_grid,
             key_name: result.key_name,
             key_numerical: result.key_numerical,
         });
     });
+}
+
+pub(crate) fn request_waveform_detail(
+    state: &AudioState,
+    request_id: u64,
+    start: Duration,
+    end: Duration,
+    points: usize,
+) -> Result<(), AudioError> {
+    let Some(path) = state.track.path.clone() else {
+        return Ok(());
+    };
+
+    let decoder = open_file_with_decoder(&path)?;
+
+    let channels = decoder.channels().get();
+    let sample_rate = decoder.sample_rate().get();
+
+    let total_frames = state
+        .track
+        .duration
+        .as_secs_f64()
+        .mul_add(sample_rate as f64, 0.0) as usize;
+
+    let start_frame = (start.as_secs_f64() * sample_rate as f64) as usize;
+    let end_frame = (end.as_secs_f64() * sample_rate as f64) as usize;
+
+    drop(decoder);
+
+    let status_tx = state.status_tx.clone();
+
+    crate::backend::analysis::waveform::stream_waveform_detail(
+        path,
+        channels,
+        sample_rate,
+        total_frames,
+        start_frame,
+        end_frame,
+        points,
+        request_id,
+        move |event| {
+            status_tx
+                .try_broadcast(event)
+                .map(|_| ())
+                .map_err(|error| error.into())
+        },
+    );
+
+    Ok(())
+}
+
+pub(crate) fn request_waveform_overview(state: &AudioState) -> Result<(), AudioError> {
+    let Some(path) = state.track.path.clone() else {
+        return Ok(());
+    };
+
+    let decoder = open_file_with_decoder(&path)?;
+
+    let channels = decoder.channels().get();
+    let sample_rate = decoder.sample_rate().get();
+    let duration = decoder.total_duration().unwrap_or(state.track.duration);
+
+    drop(decoder);
+
+    start_waveform_analysis(path, channels, sample_rate, duration, state);
+
+    Ok(())
 }

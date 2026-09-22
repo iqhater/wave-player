@@ -5,10 +5,12 @@ use super::components::{
     errors_toast::ErrorsToast, footer::Footer, player_controls::PlayerControls, sidebar::Sidebar,
     theme_toggle::ThemeToggle,
 };
+use crate::backend::metadata::TrackMetadata;
+
 // use super::screens::home::Home;
 use super::theme::{Theme, use_theme, use_theme_provider};
 use crate::PlayerContext;
-use crate::shared::event_types::StoreEvent;
+use crate::shared::event_types::{PlayerEvent, StoreEvent};
 use futures_util::StreamExt;
 
 // Geist link "https://fonts.googleapis.com/css2?family=Geist:wght@100;300;400;500;600;700;800;900&display=swap"
@@ -52,6 +54,9 @@ pub struct PlaybackUIState {
     pub is_playing: Signal<bool>,
     pub speed: Signal<f32>,
     pub preserve_pitch: Signal<bool>,
+
+    pub metadata: Signal<Option<TrackMetadata>>,
+    pub waveform_peaks: Signal<Vec<f32>>,
 }
 
 #[derive(Clone, Copy)]
@@ -70,10 +75,10 @@ pub fn RootLayout() -> Element {
     use_context_provider(|| MobileMenuOpen(mobile_menu_open));
 
     // Settings config
-    let mut cursor_follows_loop = use_signal(|| ctx.config.read().ui.timeline_cursor_follows_loop);
-    let mut show_time_markers = use_signal(|| ctx.config.read().ui.show_time_markers);
-    let mut loop_repeat_region = use_signal(|| ctx.config.read().ui.loop_repeat_region);
-    let mut timeline_progress_view = use_signal(|| ctx.config.read().ui.timeline_progress_view);
+    let cursor_follows_loop = use_signal(|| ctx.config.read().ui.timeline_cursor_follows_loop);
+    let show_time_markers = use_signal(|| ctx.config.read().ui.show_time_markers);
+    let loop_repeat_region = use_signal(|| ctx.config.read().ui.loop_repeat_region);
+    let timeline_progress_view = use_signal(|| ctx.config.read().ui.timeline_progress_view);
     let mut show_beat_grid = use_signal(|| ctx.config.read().ui.show_beat_grid);
     let mut beat_grid_snap = use_signal(|| ctx.config.read().ui.beat_grid_snap);
 
@@ -99,6 +104,9 @@ pub fn RootLayout() -> Element {
     let has_track = use_signal(|| false);
     let is_playing = use_signal(|| false);
 
+    let metadata = use_signal(|| None::<TrackMetadata>);
+    let waveform_peaks = use_signal(|| vec![0.0_f32; 500]);
+
     let loop_start = use_signal(|| 0.0_f32);
     let loop_end = use_signal(|| 0.0_f32);
     let loop_enabled = use_signal(|| false);
@@ -113,6 +121,8 @@ pub fn RootLayout() -> Element {
         is_playing,
         speed,
         preserve_pitch,
+        metadata,
+        waveform_peaks,
     });
 
     use_context_provider(|| LoopUIState {
@@ -162,6 +172,70 @@ pub fn RootLayout() -> Element {
                         // Синхронизируем UI-состояние аудионастроек с конфигурацией.
                         speed.set(config.audio.speed.clamp(0.25, 2.0));
                         preserve_pitch.set(config.audio.preserve_pitch);
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+    });
+
+    use_future(move || {
+        let mut status_rx = ctx.status_rx.read().clone();
+
+        let mut position_secs = position_secs;
+        let mut duration_secs = duration_secs;
+        let mut has_track = has_track;
+        let mut is_playing = is_playing;
+        let mut metadata = metadata;
+        let mut waveform_peaks = waveform_peaks;
+
+        async move {
+            while let Some(event) = status_rx.next().await {
+                match event {
+                    PlayerEvent::Started {
+                        duration,
+                        metadata: track_metadata,
+                    } => {
+                        position_secs.set(0.0);
+                        duration_secs.set(duration.as_secs_f32());
+                        has_track.set(true);
+                        is_playing.set(true);
+                        metadata.set(Some(track_metadata));
+                        waveform_peaks.set(vec![0.0_f32; 500]);
+                    }
+
+                    PlayerEvent::Paused => {
+                        is_playing.set(false);
+                    }
+
+                    PlayerEvent::Resumed => {
+                        is_playing.set(true);
+                    }
+
+                    PlayerEvent::Finished => {
+                        is_playing.set(false);
+                        position_secs.set(0.0);
+                    }
+
+                    PlayerEvent::WaveformChunkReady {
+                        chunk,
+                        start_bin,
+                        total_bins,
+                    } => {
+                        if waveform_peaks.read().len() != total_bins {
+                            waveform_peaks.set(vec![0.0_f32; total_bins]);
+                        }
+
+                        waveform_peaks.with_mut(|peaks| {
+                            for (index, value) in chunk.into_iter().enumerate() {
+                                let target_index = start_bin + index;
+
+                                if let Some(peak) = peaks.get_mut(target_index) {
+                                    *peak = value;
+                                }
+                            }
+                        });
                     }
 
                     _ => {}

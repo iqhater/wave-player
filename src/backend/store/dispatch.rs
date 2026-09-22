@@ -1,7 +1,5 @@
 use super::cache::CacheStore;
-use crate::backend::state::AudioState;
 use crate::shared::command_types::StoreCommand;
-use crate::shared::event_types::AudioError;
 
 use crate::shared::event_types::{StoreEvent, StoreSender};
 
@@ -45,7 +43,7 @@ pub(crate) fn dispatch(
                         is_favorite: true,
                     }) {
                         Ok(_) => {
-                            println!("backend: favorite added, track_id={track_id}");
+                            // println!("backend: favorite added, track_id={track_id}");
                         }
                         Err(error) => {
                             eprintln!("backend: failed to broadcast favorite addition: {error:?}");
@@ -65,7 +63,7 @@ pub(crate) fn dispatch(
                     is_favorite: false,
                 }) {
                     Ok(_) => {
-                        println!("backend: favorite removed, track_id={track_id}");
+                        // println!("backend: favorite removed, track_id={track_id}");
                     }
                     Err(error) => {
                         eprintln!("backend: failed to broadcast favorite removal: {error:?}");
@@ -80,12 +78,12 @@ pub(crate) fn dispatch(
         StoreCommand::GetFavorites => {
             let tracks = db.favorites();
 
-            println!("backend: loaded {} favorite track(s)", tracks.len());
-            println!("backend: favorite track(s) {:?}", tracks);
+            // println!("backend: loaded {} favorite track(s)", tracks.len());
+            // println!("backend: favorite track(s) {:?}", tracks);
 
             match store_tx.try_broadcast(StoreEvent::FavoritesLoaded { tracks }) {
                 Ok(_) => {
-                    println!("backend: FavoritesLoaded sent");
+                    // println!("backend: FavoritesLoaded sent");
                 }
                 Err(error) => {
                     eprintln!("backend: failed to broadcast FavoritesLoaded: {error:?}");

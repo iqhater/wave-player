@@ -1,10 +1,7 @@
 use crate::PlayerContext;
 use crate::gui::theme::{Theme, use_theme};
 use crate::shared::command_types::StoreCommand;
-use crate::shared::event_types::StoreEvent;
-use crate::shared::store_types::AppConfig;
 use dioxus::prelude::*;
-use futures_util::StreamExt;
 
 #[component]
 pub fn ThemeToggle() -> Element {

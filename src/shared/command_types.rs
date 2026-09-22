@@ -38,6 +38,15 @@ pub enum PlayerCommand {
     /// Панорама `-1.0..1.0` (центр `0.0`).
     SetPan(f32),
 
+    RequestWaveformDetail {
+        request_id: u64,
+        start: Duration,
+        end: Duration,
+        points: usize,
+    },
+
+    RequestWaveformOverview,
+
     /// Get player state for different screens
     RequestState,
 }

@@ -27,11 +27,11 @@ pub fn Favorites() -> Element {
         let store_cmd_tx = ctx.store_cmd_tx;
 
         async move {
-            println!("ui: Favorites listener started");
+            // println!("ui: Favorites listener started");
 
             match store_cmd_tx.read().send(StoreCommand::GetFavorites) {
                 Ok(()) => {
-                    println!("ui: GetFavorites sent");
+                    // println!("ui: GetFavorites sent");
                 }
                 Err(error) => {
                     eprintln!("ui: failed to send GetFavorites: {error}");
@@ -40,13 +40,13 @@ pub fn Favorites() -> Element {
             }
 
             while let Some(event) = store_rx.next().await {
-                println!("ui: received store event: {event:?}");
+                // println!("ui: received store event: {event:?}");
 
                 match event {
                     StoreEvent::FavoritesLoaded {
                         tracks: loaded_tracks,
                     } => {
-                        println!("ui: loaded {} favorite track(s)", loaded_tracks.len());
+                        // println!("ui: loaded {} favorite track(s)", loaded_tracks.len());
 
                         tracks.set(loaded_tracks);
                     }

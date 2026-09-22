@@ -8,7 +8,6 @@ use crate::shared::event_types::PlayerEvent;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::thread;
-use std::time::Duration;
 
 pub(crate) fn save_loop(state: &mut AudioState, output_path: String) -> Result<(), AudioError> {
     let input_path = state

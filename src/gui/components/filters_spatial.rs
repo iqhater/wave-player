@@ -364,7 +364,7 @@ fn AudioKnob(
                     );
                     let _ = document::eval(&js_code);
                 },
-                onpointerleave: move |evt| {
+                onpointerleave: move |_| {
                     is_dragging.set(false);
                 },
                 onpointercancel: move |evt| {
@@ -380,7 +380,7 @@ fn AudioKnob(
                     let _ = document::eval(&js_code);
                 },
 
-                onclick: move |e| {
+                onclick: move |_| {
                     is_dragging.set(false);
                 },
 

@@ -57,7 +57,6 @@ where
     );
 
     state.player.append(spatial);
-    // state.player.set_speed(state.playback.speed);
 }
 
 // V2

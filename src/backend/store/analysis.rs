@@ -1,8 +1,5 @@
 use super::db::DbStore;
-use crate::shared::store_types::Track;
-use crate::shared::store_types::TrackData;
-use rusqlite::OptionalExtension;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 impl DbStore {
     pub fn update_track_analysis(

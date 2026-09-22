@@ -1,6 +1,5 @@
 use audiotags::Tag;
 use std::path::Path;
-use std::time::Duration;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrackMetadata {
@@ -18,77 +17,6 @@ pub struct TrackMetadata {
 /// Falls back to filename parsing if tags are missing.
 pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
     parse_track_metadata_with_cover(path, None)
-    /* // Try audiotags first
-    if let Ok(tag) = Tag::new().read_from_path(path) {
-        let title = tag.title().map(|s| s.to_string()).filter(|s| !s.is_empty());
-        let artist = tag
-            .artist()
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty());
-
-        let album = tag
-            .album_title()
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty());
-
-        let genre = tag.genre().map(|s| s.to_string()).filter(|s| !s.is_empty());
-
-        let cover = tag
-            .album_cover()
-            .map(|pic| pic.data.to_vec())
-            .unwrap_or_default();
-
-        // If both title and artist are present from tags — use them
-        if let (Some(t), Some(a)) = (title.clone(), artist.clone()) {
-            return TrackMetadata {
-                artist: a,
-                title: t,
-                album: album.unwrap_or("".to_string()),
-                genre: genre.unwrap_or("".to_string()),
-                // duration: duration,
-                cover,
-                track_path: path.to_string_lossy().into_owned(),
-            };
-        }
-
-        // Fallback: use what we have + filename parsing
-        let file_stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let (parsed_artist, parsed_title) = parse_filename(&file_stem);
-
-        return TrackMetadata {
-            artist: artist.unwrap_or(parsed_artist),
-            title: title.unwrap_or(parsed_title),
-            album: album.unwrap_or("".to_string()),
-            genre: genre.unwrap_or("".to_string()),
-            // duration: duration,
-            cover,
-            track_path: path.to_string_lossy().into_owned(),
-        };
-    }
-
-    // Fallback: filename-only parsing
-    let file_stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("Unknown")
-        .to_string();
-
-    let (artist, title) = parse_filename(&file_stem);
-
-    TrackMetadata {
-        artist,
-        title,
-        album: "".to_string(),
-        genre: "".to_string(),
-        // duration: 0,
-        cover: vec![],
-        track_path: path.to_string_lossy().into_owned(),
-    } */
 }
 
 pub fn parse_track_metadata_with_cover(

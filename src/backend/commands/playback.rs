@@ -132,13 +132,6 @@ pub(crate) fn set_preserve_pitch(state: &mut AudioState, enabled: bool) -> Resul
         .preserve_pitch_shared
         .store(enabled, Ordering::Release);
 
-    // Мгновенно передаем флаг режима в аудио-поток.
-    // На следующем блоке источник сам пересоберет внутренний движок!
-    /* state
-    .playback
-    .preserve_pitch_shared
-    .store(enabled, Ordering::Relaxed); */
-
     if state.track.is_loaded {
         if let Err(error) = reload_track_with_effects(state) {
             // state.playback.preserve_pitch = previous_value;
@@ -232,11 +225,6 @@ fn reload_track_with_effects(state: &mut AudioState) -> Result<(), AudioError> {
     let position = state.track.position.min(state.track.duration);
     let was_playing = state.track.is_playing && !state.player.is_paused();
 
-    /* let source_position = if state.playback.preserve_pitch {
-        position
-    } else {
-        position.div_f32(state.playback.speed.max(0.01))
-    }; */
     let source_position = position;
 
     let decoder = open_file_with_decoder(&path)?;
@@ -288,14 +276,6 @@ fn seek_with_wsola(state: &mut AudioState, position: Duration) -> Result<(), Aud
     build_audio_pipeline(state, decoder, position)?;
 
     state.player.set_volume(state.playback.volume);
-
-    /* let player_speed = if state.playback.preserve_pitch {
-        1.0
-    } else {
-        state.playback.speed
-    };
-
-    state.player.set_speed(player_speed); */
 
     if was_playing {
         state.player.play();

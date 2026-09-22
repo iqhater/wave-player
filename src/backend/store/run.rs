@@ -1,12 +1,11 @@
 use crate::shared::command_types::StoreCommand;
-use crate::shared::event_types::{PlayerEvent, StoreEvent, StoreSender};
+use crate::shared::event_types::{StoreEvent, StoreSender};
 use std::path::PathBuf;
 
 use super::cache::CacheStore;
 use super::config::ConfigStore;
 use super::db::DbStore;
 use crate::backend::store::dispatch;
-use crate::shared::store_types::AppConfig;
 
 /// Отдельный поток: независимо пишет в db/cache/config и шлёт события в UI.
 /// UI никогда не ждёт ответа — всё асинхронно через каналы.

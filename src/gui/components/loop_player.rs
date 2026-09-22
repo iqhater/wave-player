@@ -162,14 +162,11 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
 
             // same zoom at the inner loop region
             onwheel: move |e| {
-                let delta_y = e.delta().strip_units().y;
+                let delta = e.delta().strip_units();
+                let delta_x = delta.x;
+                let delta_y = delta.y;
+                let shift_key = e.modifiers().shift();
                 let client_x = e.data().client_coordinates().x as f32;
-
-                let factor = if delta_y < 0.0 {
-                    1.15
-                } else {
-                    1.0 / 1.15
-                };
 
                 let mut eval = dioxus::document::eval(
                     r#"
@@ -194,19 +191,24 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
                     const pct =
                         Math.max(0, Math.min(1, localX / width));
 
-                    window.zoomAt(pct, data.factor);
+                        const result =
+                            window.handleWaveWheel(
+                                pct,
+                                data.deltaX,
+                                data.deltaY,
+                                data.shiftKey
+                            );
 
-                    dioxus.send({
-                        zoom: window.waveZoom || 1,
-                        scroll: window.waveScroll || 0
-                    });
+                        dioxus.send(result);
                     "#,
                 );
 
                 spawn(async move {
                     let _ = eval.send(serde_json::json!({
                         "clientX": client_x,
-                        "factor": factor,
+                        "deltaX": delta_x,
+                        "deltaY": delta_y,
+                        "shiftKey": shift_key,
                     }));
 
                     if let Ok(serde_json::Value::Object(data)) = eval.recv().await {
@@ -233,56 +235,6 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
                     }
                 });
             },
-
-            /* onmousemove: move |e| {
-                if let Some(mode) = dragging() {
-                    let left = cl();
-                    let cx = e.data().client_coordinates().x as f32 - left;
-                    // let pct = (cx / 600.0).clamp(0.0, 1.0);
-                    // let secs = pct * total_duration;
-
-                    match mode {
-                        "M" => {
-                            let dx = cx - anchor_x();
-                            let ds = (dx / 600.0) * total_duration;
-                            let rw = anchor_r() - anchor_l();
-                            let mut ns = anchor_l() + ds;
-                            ns = ns.max(0.0).min((total_duration - rw).max(0.0));
-                            loop_start.set(ns);
-                            loop_end.set(ns + rw);
-                        }
-                        "L" => {
-                            let dx = cx - anchor_x();
-                            let ds = (dx / 600.0) * total_duration;
-                            let new_l = (anchor_val() + ds)
-                                .max(0.0)
-                                .min((loop_end() - 0.5).max(0.0));
-                            loop_start.set(new_l);
-                        }
-                        "R" => {
-                            let dx = cx - anchor_x();
-                            let ds = (dx / 600.0) * total_duration;
-                            let new_r = (anchor_val() + ds)
-                                .max(loop_start() + 0.5)
-                                .min(total_duration);
-                            loop_end.set(new_r);
-                        }
-                        _ => {}
-                    }
-                }
-            },
-
-            onmouseup: move |_| {
-                if dragging().is_some() {
-                    dragging.set(None);
-                    send_set_loop();
-                }
-            },
-            onmouseleave: move |_| {
-                if dragging().is_some() {
-                    dragging.set(None);
-                }
-            }, */
 
             // Полноэкранный оверлей захвата: перехватывает движение мыши,
             // даже когда курсор слетает с маркеров/региона (как в крутилках)

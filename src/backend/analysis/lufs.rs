@@ -105,28 +105,6 @@ where
     status_tx(event).is_ok()
 }
 
-/* fn send_loudness_update<T>(meter: &EbuR128, status_tx: &T) -> bool
-where
-    T: Fn(PlayerEvent) -> Result<(), Box<dyn std::error::Error>>,
-{
-    let momentary_lufs = meter.loudness_momentary().ok().map(|value| value as f32);
-    let shortterm_lufs = meter.loudness_shortterm().ok().map(|value| value as f32);
-    let integrated_lufs = meter.loudness_global().ok().map(|value| value as f32);
-
-    let event = PlayerEvent::LoudnessMeasured {
-        momentary_lufs,
-        shortterm_lufs,
-        integrated_lufs,
-    };
-
-    eprintln!(
-        "LUFS: momentary={:?}, shortterm={:?}, integrated={:?}",
-        momentary_lufs, shortterm_lufs, integrated_lufs,
-    );
-
-    status_tx(event).is_ok()
-} */
-
 pub fn start_loudness_analysis(path: PathBuf, status_tx: &StatusSender) {
     let status_tx = status_tx.clone();
 

@@ -1,9 +1,6 @@
 use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 
-#[cfg(not(target_os = "android"))]
-use dioxus::html::HasFileData;
-
 #[cfg(target_os = "android")]
 use dioxus::html::{FileData, HasFileData};
 

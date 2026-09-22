@@ -1,5 +1,6 @@
 use crate::backend::metadata::TrackMetadata;
 use crate::shared::store_types::{AppConfig, RecentTrack, Track};
+use serde::Serialize;
 use std::path::PathBuf;
 
 use async_broadcast::Sender as BroadcastSender;
@@ -7,6 +8,26 @@ use async_broadcast::Sender as BroadcastSender;
 use std::time::Duration;
 
 // --- UI  <---  Audio Engine Events (События) ---
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct WaveformEnvelope {
+    pub min: f32,
+    pub max: f32,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BeatGridData {
+    pub offset: f32,
+    pub beats: Vec<f32>,
+    pub bars: Vec<f32>,
+    pub downbeats: Vec<f32>,
+}
+
+/* #[derive(Clone, Copy, Debug, Serialize)]
+pub struct WaveformBin {
+    pub min: f32,
+    pub max: f32,
+    pub rms: f32,
+} */
 
 // 2. Среднечастотный канал (Глобальный статус)
 #[derive(Clone, Debug)]
@@ -53,10 +74,24 @@ pub enum PlayerEvent {
         total_bins: usize,
     },
 
+    /* WaveformOverviewChunkReady {
+        chunk: Vec<WaveformBin>,
+        start_bin: usize,
+        total_bins: usize,
+    }, */
+    WaveformDetailReady {
+        request_id: u64,
+        start_frame: usize,
+        end_frame: usize,
+        total_frames: usize,
+        sample_rate: u32,
+        points: Vec<WaveformEnvelope>,
+    },
+
     // BPM & Key detection result
     BpmKeyDetected {
         bpm: f32,
-        beat_offset: f32,
+        beat_grid: BeatGridData,
         key_name: String,
         key_numerical: String,
     },

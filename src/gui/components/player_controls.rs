@@ -19,7 +19,6 @@ pub fn PlayerControls() -> Element {
     let mut is_playing = use_signal(|| false);
     let mut repeat_enabled = use_signal(|| ctx.config.read().audio.repeat_track);
     let mut shuffle_enabled = use_signal(|| false);
-    // let mut favorite_enabled = use_signal(|| false);
 
     // Слушаем статусы
     use_future(move || {
@@ -34,36 +33,22 @@ pub fn PlayerControls() -> Element {
                         duration.set(d);
                         position.set(0.0);
                         is_playing.set(true);
-                        println!("DEBUG EVENT: PlayerEvent::Started");
                     }
                     PlayerEvent::Paused => {
                         is_playing.set(false);
-                        println!("DEBUG EVENT: PlayerEvent::Paused");
                     }
                     PlayerEvent::Resumed => {
                         is_playing.set(true);
-                        println!("DEBUG EVENT: PlayerEvent::Resumed");
                     }
                     PlayerEvent::Finished => {
                         is_playing.set(false);
                         position.set(0.0); // сброс на 0;
-                        println!("DEBUG EVENT: PlayerEvent::Finished");
                     }
                     _ => {} // ignore other variants
                 }
             }
         }
     });
-
-    /* use_future(move || {
-        let pos = ctx.playback_progress.clone();
-        async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                position.set(pos.load(Ordering::Relaxed) as f32 / 1000.0);
-            }
-        }
-    }); */
 
     rsx! {
         section { class: "fixed bottom-0 left-0 right-0 z-40
@@ -101,14 +86,6 @@ pub fn PlayerControls() -> Element {
                     }
                 }
                 FavoritesButton {}
-                /* ControlIconButton { icon: "favorite", title: "add to favorites",
-                    active: favorite_enabled(),
-                    click_handler: {
-                        move |_| {
-                            favorite_enabled.set(!favorite_enabled());
-                        }
-                    }
-                } */
             }
 
             // Separator
@@ -569,21 +546,6 @@ fn VolumeControl() -> Element {
             }
         }
     }
-}
-
-fn usable_lufs(value: f32) -> bool {
-    value.is_finite() && (-60.0..=0.0).contains(&value)
-}
-
-fn select_lufs(
-    integrated_lufs: Option<f32>,
-    shortterm_lufs: Option<f32>,
-    momentary_lufs: Option<f32>,
-) -> Option<f32> {
-    [integrated_lufs, shortterm_lufs, momentary_lufs]
-        .into_iter()
-        .flatten()
-        .find(|value| usable_lufs(*value))
 }
 
 #[component]

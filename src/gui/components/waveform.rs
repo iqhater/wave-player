@@ -20,9 +20,6 @@ use std::time::Duration;
 #[component]
 pub fn Waveform() -> Element {
     let ctx = use_context::<PlayerContext>();
-    // let cmd_tx = ctx.command_tx;
-    // let init_playback = ctx.playback_progress.read().clone();
-
     let playback = use_context::<PlaybackUIState>();
 
     // Grid settings
@@ -37,27 +34,24 @@ pub fn Waveform() -> Element {
     let mut position_secs = playback.position_secs;
     let mut hover_position_secs = use_signal(|| None::<f32>);
 
-    /* let mut position_secs = use_signal(move || {
-        Duration::from_millis(init_playback.load(Ordering::Relaxed) as u64).as_secs_f32()
-    }); */
     let mut duration_secs = playback.duration_secs;
     let mut has_track = playback.has_track;
-
-    // let waveform_data = ctx.waveform_data;
 
     // Loop state (shared with LoopPlayer)
 
     // Drag state
-    let mut dragging = use_signal(|| None::<&'static str>);
-    let mut last_mouse_x = use_signal(|| 0.0 as f32);
-    let mut is_dragover_event = use_signal(|| true);
+    let dragging = use_signal(|| None::<&'static str>);
+    // Overlay is visible only when there is no loaded track.
+    let mut is_dragover_event = use_signal(move || !has_track());
 
     // Container rect for mouse calculations
     let mut container_rect: Signal<Option<(f32, f32)>> = use_signal(|| None);
 
     // Zoom state
-    let mut zoom_level = use_signal(|| 1.0f32);
-    let mut view_center = use_signal(|| 50.0f32);
+    let zoom_level = use_signal(|| 1.0f32);
+    let view_center = use_signal(|| 50.0f32);
+
+    let waveform_peaks = playback.waveform_peaks;
 
     let pos = position_secs();
     let dur = duration_secs();
@@ -83,15 +77,6 @@ pub fn Waveform() -> Element {
         async move {
             while let Some(status) = status_rx.next().await {
                 match status {
-                    /* PlayerEvent::LoopSet { start, end } => {
-                        loop_start.set(start.as_secs_f32());
-                        loop_end.set(end.as_secs_f32());
-                    }
-                    PlayerEvent::LoopEnabled {
-                        is_loop: loop_enabled,
-                    } => {
-                        is_loop_enabled.set(loop_enabled);
-                    } */
                     PlayerEvent::Started {
                         duration: d,
                         metadata: _,
@@ -101,9 +86,6 @@ pub fn Waveform() -> Element {
                         has_track.set(true);
                         is_playing.set(true);
                         is_dragover_event.set(false);
-
-                        // is_playing.set(true);
-                        println!("DEBUG EVENT: PlayerEvent::Started");
                     }
                     PlayerEvent::Paused => {
                         is_playing.set(false);
@@ -115,7 +97,6 @@ pub fn Waveform() -> Element {
                     PlayerEvent::Finished => {
                         is_playing.set(false);
                         position_secs.set(0.0); // сброс на 0;
-                        println!("DEBUG EVENT: PlayerEvent::Finished");
                     }
                     _ => {} // ignore other variants
                 }
@@ -144,13 +125,6 @@ pub fn Waveform() -> Element {
                 }
             }
         }
-        /* let pos = ctx.playback_progress.read().clone();
-        async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(16)).await;
-                position_secs.set(pos.load(Ordering::Relaxed) as f32 / 1000.0);
-            }
-        } */
     });
 
     // Time marks
@@ -203,7 +177,6 @@ pub fn Waveform() -> Element {
         let key = e.key();
         let ctrl = e.modifiers().ctrl();
         let offset = if ctrl { 30.0 } else { 5.0 };
-        // let dur = duration().as_secs_f32();
 
         match key {
             Key::ArrowLeft => {
@@ -293,13 +266,6 @@ pub fn Waveform() -> Element {
 
                         let element_x = e.element_coordinates().x as f32;
 
-                        // Ширину берём прямо из canvas (в тех же CSS-пикселях, что и offsetX)
-                        /* let mut size_eval = dioxus::document::eval(
-                            r#"
-                            let c = document.getElementById("waveform-canvas");
-                            dioxus.send(c ? c.clientWidth : 0);
-                            "#
-                        ); */
                         let mut snap_eval = dioxus::document::eval(
                             r#"
                             let d = await dioxus.recv();
@@ -341,35 +307,6 @@ pub fn Waveform() -> Element {
                                     ));
                                 }
                             }
-                            /* if let Ok(serde_json::Value::Number(w)) = size_eval.recv().await {
-                                if let Some(w) = w.as_f64() {
-                                    if w > 0.0 {
-                                        let pct = (element_x / w as f32).clamp(0.0, 1.0);
-                                        const rawSecs = window.waveTimeAtViewportPct
-                                            ? window.waveTimeAtViewportPct(pct)
-                                            : d.duration * pct;
-                                        // Магнит к сетке (уважает snap-настройку внутри JS)
-                                        let mut snap_eval = dioxus::document::eval(
-                                            r#"
-                                            let data = await dioxus.recv();
-                                            dioxus.send(window.snapToGrid ? window.snapToGrid(data.secs) : data.secs);
-                                            "#
-                                        );
-                                        let _ = snap_eval.send(serde_json::json!({ "secs": raw_secs }));
-                                        if let Ok(serde_json::Value::Number(s)) = snap_eval.recv().await {
-                                            if let Some(secs) = s.as_f64() {
-                                                let _ = ctx.command_tx.read().send(PlayerCommand::Seek(
-                                                    Duration::from_secs_f32(secs as f32),
-                                                ));
-                                            }
-                                        }
-                                        /* let pct = (element_x / w as f32).clamp(0.0, 1.0);
-                                        let _ = ctx.command_tx.read().send(PlayerCommand::Seek(
-                                            Duration::from_secs_f32(duration_secs() * pct),
-                                        )); */
-                                    }
-                                }
-                            } */
                         });
                     }
                 },
@@ -412,9 +349,10 @@ pub fn Waveform() -> Element {
                         cursor_progress,
                         zoom: zoom_level,
                         view_center,
+                        waveform_peaks,
                     }
 
-                    // TODO: fix gird zoom and calcualtions
+                    // DONE
                     if show_grid() {
                         BeatGrid {
                             total_duration: duration_secs,
@@ -461,7 +399,12 @@ pub fn Waveform() -> Element {
                     }
                 }
 
-                DragAndDropFile { is_dragover_event: is_dragover_event }
+                if !has_track() || is_dragover_event() {
+                    DragAndDropFile {
+                        is_dragover_event: is_dragover_event,
+                    }
+                }
+
             }
 
             if has_track() {

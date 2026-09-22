@@ -1,28 +1,14 @@
-use crate::shared::event_types::AudioError;
+use crate::shared::event_types::{AudioError, BeatGridData};
+
 use stratum_dsp::{AnalysisConfig, analyze_audio};
 
 /// Result of BPM and key analysis
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct BpmKeyResult {
     pub bpm: f32,
-    pub beat_offset: f32,
+    pub beat_grid: BeatGridData,
     pub key_name: String,
     pub key_numerical: String,
-}
-
-// TODO: update
-pub(crate) struct AnalysisResult {
-    pub bpm: f32,
-    pub key_name: String,
-    pub key_numerical: String,
-    pub beat_grid: BeatGrid,
-}
-
-pub(crate) struct BeatGrid {
-    pub offset: f32,
-    pub beats: Vec<f32>,
-    pub bars: Vec<f32>,
-    pub downbeats: Vec<f32>,
 }
 
 /// Analyze raw audio samples to detect BPM and musical key.
@@ -67,10 +53,16 @@ pub fn analyze_bpm_key(
     // println!("BPM: {:#?}", result.bpm);
     // println!("BPM Confidence: {:#?}", result.bpm_confidence);
 
+    let beat_grid = BeatGridData {
+        offset: beat_offset,
+        beats: result.beat_grid.beats.clone(),
+        bars: result.beat_grid.bars.clone(),
+        downbeats: result.beat_grid.downbeats.clone(),
+    };
+
     Ok(BpmKeyResult {
-        // bpm: (result.bpm * 10.0).round() / 10.0, // Round to 1 decimal
         bpm: result.bpm.round(), // Round to 1 decimal
-        beat_offset,
+        beat_grid,
         key_name: result.key.name(),
         key_numerical: result.key.numerical(),
     })

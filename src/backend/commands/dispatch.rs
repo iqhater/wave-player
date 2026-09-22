@@ -52,6 +52,15 @@ pub(crate) fn dispatch(
 
         PlayerCommand::ExportLoop(path) => export::save_loop(state, path),
 
+        PlayerCommand::RequestWaveformDetail {
+            request_id,
+            start,
+            end,
+            points,
+        } => track::request_waveform_detail(state, request_id, start, end, points),
+
+        PlayerCommand::RequestWaveformOverview => track::request_waveform_overview(state),
+
         // State commands
         PlayerCommand::RequestState => {
             let path = state.track.path.clone();

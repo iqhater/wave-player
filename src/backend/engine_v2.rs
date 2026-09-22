@@ -69,9 +69,6 @@ pub fn run_audio_loop_v2(
             if is_playing {
                 thread::sleep(Duration::from_millis(10));
             }
-
-            // Get LUFS
-            // start_loudness_analysis(PathBuf::from(&path), &status_tx);
         }
     });
 

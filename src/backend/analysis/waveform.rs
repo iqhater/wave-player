@@ -1,4 +1,4 @@
-use crate::shared::event_types::PlayerEvent;
+use crate::shared::event_types::{PlayerEvent, WaveformEnvelope};
 use rodio::decoder::DecoderBuilder;
 use std::fs;
 use std::fs::File;
@@ -111,5 +111,119 @@ pub fn stream_waveform<T>(
                 chunk_start_bin = bin + 1;
             }
         }
+    });
+}
+
+pub fn stream_waveform_detail<T>(
+    path: PathBuf,
+    channels: u16,
+    sample_rate: u32,
+    total_frames: usize,
+    start_frame: usize,
+    end_frame: usize,
+    point_count: usize,
+    request_id: u64,
+    status_tx: T,
+) where
+    T: Fn(PlayerEvent) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
+{
+    if channels == 0
+        || sample_rate == 0
+        || total_frames == 0
+        || start_frame >= end_frame
+        || point_count == 0
+    {
+        return;
+    }
+
+    std::thread::spawn(move || {
+        let file = match File::open(&path) {
+            Ok(file) => file,
+            Err(_) => return,
+        };
+
+        let byte_len = match fs::metadata(&path) {
+            Ok(metadata) => metadata.len(),
+            Err(_) => return,
+        };
+
+        let mut decoder = match DecoderBuilder::new()
+            .with_data(BufReader::new(file))
+            .with_byte_len(byte_len)
+            .build()
+        {
+            Ok(decoder) => decoder,
+            Err(_) => return,
+        };
+
+        let end_frame = end_frame.min(total_frames);
+        let frame_count = end_frame.saturating_sub(start_frame);
+
+        if frame_count == 0 {
+            return;
+        }
+
+        let point_count = point_count.min(frame_count).max(1);
+        let channels_count = channels as usize;
+
+        let mut points = vec![
+            WaveformEnvelope {
+                min: 1.0,
+                max: -1.0,
+            };
+            point_count
+        ];
+
+        for frame_index in 0..end_frame {
+            let mut frame_min = 1.0_f32;
+            let mut frame_max = -1.0_f32;
+            let mut complete_frame = true;
+
+            for _ in 0..channels_count {
+                match decoder.next() {
+                    Some(sample) => {
+                        frame_min = frame_min.min(sample);
+                        frame_max = frame_max.max(sample);
+                    }
+                    None => {
+                        complete_frame = false;
+                        break;
+                    }
+                }
+            }
+
+            if !complete_frame || frame_index < start_frame {
+                continue;
+            }
+
+            let relative_frame = frame_index - start_frame;
+
+            let point_index = relative_frame
+                .saturating_mul(point_count)
+                .checked_div(frame_count)
+                .unwrap_or(0)
+                .min(point_count - 1);
+
+            let point = &mut points[point_index];
+
+            point.min = point.min.min(frame_min);
+            point.max = point.max.max(frame_max);
+        }
+
+        for point in &mut points {
+            if point.min > point.max {
+                point.min = 0.0;
+                point.max = 0.0;
+            }
+        }
+
+        let _ = status_tx(PlayerEvent::WaveformDetailReady {
+            request_id,
+            start_frame,
+            end_frame,
+            total_frames,
+            sample_rate,
+            points,
+        });
     });
 }
