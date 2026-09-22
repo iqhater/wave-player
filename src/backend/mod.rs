@@ -6,6 +6,7 @@ pub mod engine_v2;
 mod filters;
 pub mod metadata;
 mod offline_render;
+mod queue;
 mod spatial;
 mod state;
 pub mod store;

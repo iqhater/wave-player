@@ -50,6 +50,16 @@ pub(crate) fn dispatch(
         // Input/Output load & save commands
         PlayerCommand::LoadFile(path) => track::load_file(state, PathBuf::from(path)),
 
+        PlayerCommand::PlayQueue { tracks, current } => {
+            playback::play_queue(state, tracks, current)
+        }
+
+        PlayerCommand::NextTrack => playback::next_track(state),
+
+        PlayerCommand::PreviousTrack => playback::previous_track(state),
+
+        PlayerCommand::SetShuffle(enabled) => playback::set_shuffle(state, enabled),
+
         PlayerCommand::ExportLoop(path) => export::save_loop(state, path),
 
         PlayerCommand::RequestWaveformDetail {
@@ -69,6 +79,8 @@ pub(crate) fn dispatch(
             let _ = state
                 .status_tx
                 .try_broadcast(PlayerEvent::PlayerState { path, is_playing });
+
+            state.publish_queue_state();
 
             Ok(())
         }

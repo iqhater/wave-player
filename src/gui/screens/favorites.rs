@@ -125,6 +125,11 @@ pub fn Favorites() -> Element {
 
     let tracks_snapshot = tracks();
 
+    let queue_paths = tracks_snapshot
+        .iter()
+        .map(|track| track.path.clone())
+        .collect::<Vec<_>>();
+
     rsx! {
         section {
             class: "w-full flex flex-col gap-3",
@@ -223,26 +228,15 @@ pub fn Favorites() -> Element {
                             track,
                             on_play: {
                                 let command_tx = ctx.command_tx;
-                                let current_track_path = current_track_path;
-                                let is_playing = is_playing;
+                                let queue_paths = queue_paths.clone();
 
                                 move |track: Track| {
-                                    let is_current_track =
-                                        current_track_path() == Some(track.path.clone());
-
-                                    let command = if is_current_track {
-                                        if is_playing() {
-                                            PlayerCommand::Pause
-                                        } else {
-                                            PlayerCommand::Resume
-                                        }
-                                    } else {
-                                        PlayerCommand::LoadFile(
-                                            track.path.to_string_lossy().into_owned(),
-                                        )
-                                    };
-
-                                    let _ = command_tx.read().send(command);
+                                    let _ = command_tx
+                                        .read()
+                                        .send(PlayerCommand::PlayQueue {
+                                            tracks: queue_paths.clone(),
+                                            current: track.path,
+                                        });
                                 }
                             },
 

@@ -21,6 +21,15 @@ pub enum PlayerCommand {
     /// Load file with path
     LoadFile(String),
 
+    PlayQueue {
+        tracks: Vec<PathBuf>,
+        current: PathBuf,
+    },
+
+    NextTrack,
+    PreviousTrack,
+    SetShuffle(bool),
+
     /// Repeat a whole track
     ToggleRepeatTrack(bool),
     /// Экспортировать петлю в WAV-файл по пути

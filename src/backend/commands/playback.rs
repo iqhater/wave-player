@@ -23,8 +23,84 @@ use super::track;
 ///
 /// File loading remains implemented in the track command module.
 pub(crate) fn play(state: &mut AudioState, path: PathBuf) -> Result<(), AudioError> {
-    // replace into init or dispatch???
+    state.queue.set_single(path.clone());
+    state.publish_queue_state();
+
     track::load_file(state, path)
+}
+
+pub(crate) fn play_queue(
+    state: &mut AudioState,
+    tracks: Vec<PathBuf>,
+    current: PathBuf,
+) -> Result<(), AudioError> {
+    if tracks.is_empty() {
+        return Ok(());
+    }
+
+    let same_track = state.track.path.as_ref() == Some(&current);
+
+    state.queue.replace(tracks, current);
+    state.publish_queue_state();
+
+    if same_track {
+        if is_playing(state) {
+            pause(state)?;
+        } else {
+            resume(state)?;
+        }
+
+        return Ok(());
+    }
+
+    let Some(path) = state.queue.current_path().cloned() else {
+        return Ok(());
+    };
+
+    track::load_file(state, path)
+}
+
+pub(crate) fn set_shuffle(state: &mut AudioState, enabled: bool) -> Result<(), AudioError> {
+    state.queue.set_shuffle(enabled);
+    state.publish_queue_state();
+
+    Ok(())
+}
+
+pub(crate) fn next_track(state: &mut AudioState) -> Result<(), AudioError> {
+    let Some(path) = state.queue.peek_next().cloned() else {
+        return Ok(());
+    };
+
+    track::load_file(state, path)?;
+    state.queue.advance_next();
+    state.publish_queue_state();
+
+    Ok(())
+}
+
+const PREVIOUS_RESTART_THRESHOLD: Duration = Duration::from_secs(3);
+
+pub(crate) fn previous_track(state: &mut AudioState) -> Result<(), AudioError> {
+    if !state.track.is_loaded {
+        return Ok(());
+    }
+
+    update_position(state);
+
+    if state.track.position > PREVIOUS_RESTART_THRESHOLD {
+        return seek(state, Duration::ZERO);
+    }
+
+    let Some(path) = state.queue.peek_previous().cloned() else {
+        return seek(state, Duration::ZERO);
+    };
+
+    track::load_file(state, path)?;
+    state.queue.advance_previous();
+    state.publish_queue_state();
+
+    Ok(())
 }
 
 /// Pauses the current track.
@@ -356,10 +432,14 @@ fn jump_to_loop_start(state: &AudioState) -> bool {
 
 fn finish_track(state: &mut AudioState) -> Result<(), AudioError> {
     if state.track.repeat {
-        repeat_from_beginning(state)
-    } else {
-        mark_finished(state)
+        return repeat_from_beginning(state);
     }
+
+    if load_next_from_queue(state)? {
+        return Ok(());
+    }
+
+    mark_finished(state)
 }
 
 fn mark_finished(state: &mut AudioState) -> Result<(), AudioError> {
@@ -404,4 +484,16 @@ fn repeat_from_beginning(state: &mut AudioState) -> Result<(), AudioError> {
     state.player.play();
 
     Ok(())
+}
+
+fn load_next_from_queue(state: &mut AudioState) -> Result<bool, AudioError> {
+    let Some(path) = state.queue.peek_next().cloned() else {
+        return Ok(false);
+    };
+
+    track::load_file(state, path)?;
+    state.queue.advance_next();
+    state.publish_queue_state();
+
+    Ok(true)
 }

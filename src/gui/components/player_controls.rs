@@ -18,12 +18,15 @@ pub fn PlayerControls() -> Element {
     let mut duration = use_signal(|| Duration::from_secs(0));
     let mut is_playing = use_signal(|| false);
     let mut repeat_enabled = use_signal(|| ctx.config.read().audio.repeat_track);
+    let mut has_next = use_signal(|| false);
     let mut shuffle_enabled = use_signal(|| false);
 
     // Слушаем статусы
     use_future(move || {
         let mut status_rx = ctx.status_rx.read().clone();
         async move {
+            let _ = ctx.command_tx.read().send(PlayerCommand::RequestState);
+
             while let Some(status) = status_rx.next().await {
                 match status {
                     PlayerEvent::Started {
@@ -43,6 +46,14 @@ pub fn PlayerControls() -> Element {
                     PlayerEvent::Finished => {
                         is_playing.set(false);
                         position.set(0.0); // сброс на 0;
+                    }
+                    PlayerEvent::QueueChanged {
+                        has_next: next_available,
+                        shuffle,
+                        ..
+                    } => {
+                        has_next.set(next_available);
+                        shuffle_enabled.set(shuffle);
                     }
                     _ => {} // ignore other variants
                 }
@@ -80,7 +91,18 @@ pub fn PlayerControls() -> Element {
                         active: shuffle_enabled(),
                         click_handler: {
                             move |_| {
-                                shuffle_enabled.set(!shuffle_enabled());
+                                let enabled = !shuffle_enabled();
+
+                                if ctx
+                                    .command_tx
+                                    .read()
+                                    .send(PlayerCommand::SetShuffle(enabled))
+                                    .is_err()
+                                {
+                                    return;
+                                }
+
+                                shuffle_enabled.set(enabled);
                             }
                         }
                     }
@@ -99,6 +121,12 @@ pub fn PlayerControls() -> Element {
                 button {
                     class: "w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container hover:text-primary cursor-pointer transition-all active:scale-90",
                     title: "previous track",
+                    onclick: move |_| {
+                        let _ = ctx
+                            .command_tx
+                            .read()
+                            .send(PlayerCommand::PreviousTrack);
+                    },
                     span { class: "material-symbols-outlined text-[24px]", "skip_previous" }
                 }
 
@@ -129,6 +157,13 @@ pub fn PlayerControls() -> Element {
                 button {
                     class: "w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container cursor-pointer hover:text-primary transition-all active:scale-90",
                     title: "next track",
+                    disabled: !has_next(),
+                    onclick: move |_| {
+                        let _ = ctx
+                            .command_tx
+                            .read()
+                            .send(PlayerCommand::NextTrack);
+                    },
                     span { class: "material-symbols-outlined text-[24px]", "skip_next" }
                 }
             }

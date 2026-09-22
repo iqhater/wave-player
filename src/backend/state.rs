@@ -1,5 +1,6 @@
+use crate::backend::queue::QueueState;
 use crate::shared::command_types::StoreCommand;
-use crate::shared::event_types::{ErrorSender, StatusSender};
+use crate::shared::event_types::{ErrorSender, PlayerEvent, StatusSender};
 
 use rodio::Player;
 use std::path::PathBuf;
@@ -15,6 +16,7 @@ pub(crate) struct AudioState {
     pub(crate) playback: PlaybackState,
     pub(crate) effects: EffectsState,
     pub(crate) loop_state: LoopState,
+    pub(crate) queue: QueueState,
 
     pub(crate) status_tx: StatusSender,
     pub(crate) store_cmd_tx: flume::Sender<StoreCommand>,
@@ -39,6 +41,7 @@ impl AudioState {
             playback: PlaybackState::new(playback_progress),
             effects: EffectsState::new(),
             loop_state: LoopState::new(),
+            queue: QueueState::default(),
 
             status_tx,
             store_cmd_tx,
@@ -57,6 +60,15 @@ impl AudioState {
             self.set_progress(self.track.position);
             self.playback.last_progress_update = Instant::now();
         }
+    }
+
+    pub(crate) fn publish_queue_state(&self) {
+        let _ = self.status_tx.try_broadcast(PlayerEvent::QueueChanged {
+            length: self.queue.len(),
+            has_previous: self.queue.has_previous(),
+            has_next: self.queue.has_next(),
+            shuffle: self.queue.shuffle_enabled(),
+        });
     }
 }
 

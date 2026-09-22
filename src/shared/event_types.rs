@@ -40,6 +40,13 @@ pub enum PlayerEvent {
     Resumed,
     Finished,
 
+    QueueChanged {
+        length: usize,
+        has_previous: bool,
+        has_next: bool,
+        shuffle: bool,
+    },
+
     /* VolumeChanged {
         volume: f32,
     }, */
