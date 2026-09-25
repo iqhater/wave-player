@@ -49,9 +49,9 @@ pub fn run_audio_loop_v2(
                 let _ = state.error_tx.try_broadcast(error);
             }
 
-            let is_playing = playback::is_playing(&state);
+            let was_playing = playback::is_playing(&state);
 
-            let command = if is_playing {
+            let command = if was_playing {
                 cmd_rx.try_recv().ok()
             } else {
                 match cmd_rx.recv() {
@@ -65,6 +65,9 @@ pub fn run_audio_loop_v2(
                     let _ = state.error_tx.try_broadcast(error);
                 }
             }
+
+            let is_playing = playback::is_playing(&state);
+            state.publish_meter_if_needed(is_playing);
 
             if is_playing {
                 thread::sleep(Duration::from_millis(10));

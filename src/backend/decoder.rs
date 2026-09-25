@@ -1,4 +1,5 @@
 use super::filters::LiveFilteredSource;
+use super::meter::MeteredSource;
 use super::spatial::LiveSpatialSource;
 use super::state::AudioState;
 use crate::shared::event_types::AudioError;
@@ -43,6 +44,8 @@ fn append_source<S>(state: &AudioState, source: S)
 where
     S: Source + Send + 'static,
 {
+    state.meter.reset();
+
     let filtered = LiveFilteredSource::new(
         source,
         state.effects.low_pass.clone(),
@@ -56,7 +59,9 @@ where
         state.effects.pan.clone(),
     );
 
-    state.player.append(spatial);
+    let metered = MeteredSource::new(spatial, state.meter.clone());
+
+    state.player.append(metered);
 }
 
 // V2

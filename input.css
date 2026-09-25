@@ -251,4 +251,23 @@
       inset 4px 4px 10px rgba(0, 0, 0, 0.35);
   }
 
+  /* Volume meter styles */
+  .volume-meter-rms {
+    background: linear-gradient(
+      to top,
+      var(--color-primary) 0%,
+      var(--color-primary) 75%,
+      #facc15 90%,
+      #facc15 95%,
+      var(--color-error) 95%,
+      var(--color-error) 100%
+    );
+
+    transition: height 80ms ease-out;
+  }
+
+  .volume-meter-peak {
+    transition: bottom 80ms ease-out;
+  }
+
 }

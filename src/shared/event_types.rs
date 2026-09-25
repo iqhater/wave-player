@@ -110,6 +110,12 @@ pub enum PlayerEvent {
         integrated_lufs: Option<f32>,
     },
 
+    // Visual loudness meter
+    OutputLevelMeasured {
+        peak_db: f32,
+        rms_db: f32,
+    },
+
     // Player state for different screens
     PlayerState {
         path: Option<PathBuf>,

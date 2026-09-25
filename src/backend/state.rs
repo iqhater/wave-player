@@ -1,3 +1,4 @@
+use crate::backend::meter::{MeterState, linear_to_dbfs};
 use crate::backend::queue::QueueState;
 use crate::shared::command_types::StoreCommand;
 use crate::shared::event_types::{ErrorSender, PlayerEvent, StatusSender};
@@ -23,6 +24,9 @@ pub(crate) struct AudioState {
     pub(crate) error_tx: ErrorSender,
 
     pub(crate) cover_cache_dir: PathBuf,
+
+    pub(crate) meter: MeterState,
+    last_meter_update: Instant,
 }
 
 impl AudioState {
@@ -47,6 +51,9 @@ impl AudioState {
             store_cmd_tx,
             error_tx,
             cover_cache_dir,
+
+            meter: MeterState::new(),
+            last_meter_update: Instant::now(),
         }
     }
     pub(crate) fn set_progress(&self, position: Duration) {
@@ -69,6 +76,34 @@ impl AudioState {
             has_next: self.queue.has_next(),
             shuffle: self.queue.shuffle_enabled(),
         });
+    }
+
+    pub(crate) fn publish_meter_if_needed(&mut self, is_playing: bool) {
+        const UPDATE_INTERVAL: Duration = Duration::from_millis(50);
+
+        if self.last_meter_update.elapsed() < UPDATE_INTERVAL {
+            return;
+        }
+
+        let reading = if is_playing {
+            self.meter.read()
+        } else {
+            self.meter.reset();
+
+            crate::backend::meter::MeterReading {
+                peak: 0.0,
+                rms: 0.0,
+            }
+        };
+
+        let _ = self
+            .status_tx
+            .try_broadcast(PlayerEvent::OutputLevelMeasured {
+                peak_db: linear_to_dbfs(reading.peak),
+                rms_db: linear_to_dbfs(reading.rms),
+            });
+
+        self.last_meter_update = Instant::now();
     }
 }
 

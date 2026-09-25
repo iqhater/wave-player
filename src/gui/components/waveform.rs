@@ -1,5 +1,6 @@
 use super::drag_and_drop::DragAndDropFile;
 use super::loop_player::LoopPlayer;
+use super::volume_meter::VolumeMeter;
 use super::waveform_bins_canvas::WaveformBinsCanvas;
 use dioxus::html::HasFileData;
 use std::path::PathBuf;
@@ -243,6 +244,8 @@ pub fn Waveform() -> Element {
             }
 
             div {
+                class: "flex h-28 w-full min-w-0 items-stretch gap-2",
+            div {
                 class: "relative flex h-28 w-full min-w-0
                             items-center overflow-visible
                             rounded-2xl neumorph-sunken
@@ -405,6 +408,10 @@ pub fn Waveform() -> Element {
                     }
                 }
 
+                if has_track() {
+                    VolumeMeter {}
+                }
+            }
             }
 
             if has_track() {

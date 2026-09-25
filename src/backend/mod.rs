@@ -5,6 +5,7 @@ mod decoder;
 pub mod engine_v2;
 mod filters;
 pub mod metadata;
+mod meter;
 mod offline_render;
 mod queue;
 mod spatial;
