@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::backend::decoder::{build_audio_pipeline, open_file_with_decoder};
-use crate::backend::state::AudioState;
+use crate::backend::state::{AudioState, LoopState};
 use crate::shared::event_types::{AudioError, PlayerEvent};
 use std::sync::atomic::Ordering;
 
@@ -294,22 +294,29 @@ pub(crate) fn apply_playback_speed(state: &AudioState) {
 }
 
 fn reload_track_with_effects(state: &mut AudioState) -> Result<(), AudioError> {
+    let position = state.track.position.min(state.track.duration);
+
+    reload_track_with_effects_at(state, position)
+}
+
+fn reload_track_with_effects_at(
+    state: &mut AudioState,
+    position: Duration,
+) -> Result<(), AudioError> {
     let Some(path) = state.track.path.clone() else {
         return Ok(());
     };
 
-    let position = state.track.position.min(state.track.duration);
+    let position = position.min(state.track.duration);
     let was_playing = state.track.is_playing && !state.player.is_paused();
-
-    let source_position = position;
 
     let decoder = open_file_with_decoder(&path)?;
 
     state.player.stop();
     state.player.clear();
 
-    // Позиция устанавливается внутри Decoder до добавления источника.
-    build_audio_pipeline(state, decoder, source_position)?;
+    // Position must be applied to the decoder before adding the source.
+    build_audio_pipeline(state, decoder, position)?;
 
     state.player.set_volume(state.playback.volume);
 
@@ -378,14 +385,22 @@ pub(crate) fn is_playing(state: &AudioState) -> bool {
 }
 
 pub(crate) fn tick(state: &mut AudioState) -> Result<(), AudioError> {
-    if state.track.is_loaded
-        && state.player.empty()
-        && state.track.position < state.track.duration
-        && !state.track.repeat
-    {
-        state.track.position = state.track.duration;
-        finish_track(state)?;
-        return Ok(());
+    if state.track.is_loaded && !state.track.repeat && state.player.empty() {
+        if loop_boundary_reached(
+            &state.loop_state,
+            state.track.position,
+            state.track.duration,
+            true,
+        ) {
+            seek_to_loop_start(state)?;
+            return Ok(());
+        }
+
+        if state.track.position < state.track.duration {
+            state.track.position = state.track.duration;
+            finish_track(state)?;
+            return Ok(());
+        }
     }
 
     if !state.track.is_loaded || !state.track.is_playing {
@@ -393,6 +408,16 @@ pub(crate) fn tick(state: &mut AudioState) -> Result<(), AudioError> {
     }
 
     if !advance_position(state) {
+        return Ok(());
+    }
+
+    if loop_boundary_reached(
+        &state.loop_state,
+        state.track.position,
+        state.track.duration,
+        state.player.empty(),
+    ) {
+        seek_to_loop_start(state)?;
         return Ok(());
     }
 
@@ -406,28 +431,48 @@ pub(crate) fn tick(state: &mut AudioState) -> Result<(), AudioError> {
         return Ok(());
     }
 
-    if jump_to_loop_start(state) {
-        seek(state, state.loop_state.start)?;
-        return Ok(());
-    }
-
     state.publish_progress_if_needed();
 
     Ok(())
+}
+
+fn loop_is_active(loop_state: &LoopState) -> bool {
+    loop_state.enabled && loop_state.end > loop_state.start
 }
 
 const REPEAT_GUARD: Duration = Duration::from_millis(200);
 
 fn repeat_early(state: &AudioState) -> bool {
     state.track.repeat
+        && !loop_is_active(&state.loop_state)
         && state.track.duration > REPEAT_GUARD
         && state.track.position >= state.track.duration.saturating_sub(REPEAT_GUARD)
 }
 
-fn jump_to_loop_start(state: &AudioState) -> bool {
-    state.loop_state.enabled
-        && state.loop_state.end > state.loop_state.start
-        && state.track.position >= state.loop_state.end
+fn loop_boundary_reached(
+    loop_state: &LoopState,
+    position: Duration,
+    track_duration: Duration,
+    source_empty: bool,
+) -> bool {
+    if !loop_is_active(loop_state) {
+        return false;
+    }
+
+    position >= loop_state.end
+        // При loop.end == track_duration родительский источник может
+        // завершиться раньше, чем позиция успеет достичь duration.
+        || (source_empty && loop_state.end == track_duration)
+}
+
+fn seek_to_loop_start(state: &mut AudioState) -> Result<(), AudioError> {
+    let loop_start = state.loop_state.start;
+
+    if state.player.empty() {
+        reload_track_with_effects_at(state, loop_start)
+    } else {
+        seek(state, loop_start)
+    }
 }
 
 fn finish_track(state: &mut AudioState) -> Result<(), AudioError> {
@@ -496,4 +541,91 @@ fn load_next_from_queue(state: &mut AudioState) -> Result<bool, AudioError> {
     state.publish_queue_state();
 
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::loop_boundary_reached;
+    use crate::backend::state::LoopState;
+    use std::time::Duration;
+
+    #[test]
+    fn loop_at_track_end_restarts_when_source_is_empty() {
+        let loop_state = LoopState {
+            enabled: true,
+            start: Duration::from_secs(5),
+            end: Duration::from_secs(10),
+        };
+
+        assert!(loop_boundary_reached(
+            &loop_state,
+            Duration::from_secs(9),
+            Duration::from_secs(10),
+            true,
+        ));
+    }
+
+    #[test]
+    fn loop_before_track_end_waits_until_loop_boundary() {
+        let loop_state = LoopState {
+            enabled: true,
+            start: Duration::from_secs(5),
+            end: Duration::from_secs(8),
+        };
+
+        assert!(!loop_boundary_reached(
+            &loop_state,
+            Duration::from_secs(7),
+            Duration::from_secs(10),
+            true,
+        ));
+    }
+
+    #[test]
+    fn disabled_loop_does_not_restart() {
+        let loop_state = LoopState {
+            enabled: false,
+            start: Duration::from_secs(5),
+            end: Duration::from_secs(10),
+        };
+
+        assert!(!loop_boundary_reached(
+            &loop_state,
+            Duration::from_secs(10),
+            Duration::from_secs(10),
+            true,
+        ));
+    }
+
+    #[test]
+    fn zero_length_loop_does_not_restart() {
+        let loop_state = LoopState {
+            enabled: true,
+            start: Duration::from_secs(5),
+            end: Duration::from_secs(5),
+        };
+
+        assert!(!loop_boundary_reached(
+            &loop_state,
+            Duration::from_secs(5),
+            Duration::from_secs(10),
+            false,
+        ));
+    }
+}
+
+#[test]
+fn loop_boundary_has_priority_over_track_repeat() {
+    let loop_state = LoopState {
+        enabled: true,
+        start: Duration::from_secs(5),
+        end: Duration::from_secs(10),
+    };
+
+    assert!(loop_boundary_reached(
+        &loop_state,
+        Duration::from_secs(10),
+        Duration::from_secs(10),
+        false,
+    ));
 }
