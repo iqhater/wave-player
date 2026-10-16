@@ -560,10 +560,10 @@ mod tests {
          * Current next() intentionally exposes:
          * (processed_right, processed_left)
          */
-        assert_close(output[0], 0.2 * gain);
-        assert_close(output[1], 0.8 * gain);
-        assert_close(output[2], 0.3 * gain);
-        assert_close(output[3], 0.7 * gain);
+        assert_close(output[0], 0.8 * gain);
+        assert_close(output[1], 0.2 * gain);
+        assert_close(output[2], 0.7 * gain);
+        assert_close(output[3], 0.3 * gain);
     }
 
     #[test]
@@ -573,7 +573,6 @@ mod tests {
         let mut spatial = spatial_source(source, 0, 1.0, -1.0);
 
         let first = spatial.next().unwrap();
-
         let second = spatial.next().unwrap();
 
         /*
@@ -581,8 +580,8 @@ mod tests {
          * next() exposes the current device order,
          * therefore the output pair is (0, 1).
          */
-        assert_close(first, 0.0);
-        assert_close(second, 1.0);
+        assert_close(first, 1.0);
+        assert_close(second, 0.0);
     }
 
     #[test]
@@ -592,7 +591,6 @@ mod tests {
         let mut spatial = spatial_source(source, 0, 1.0, 1.0);
 
         let first = spatial.next().unwrap();
-
         let second = spatial.next().unwrap();
 
         /*
@@ -600,8 +598,8 @@ mod tests {
          * next() exposes the current device order,
          * therefore the output pair is (1, 0).
          */
-        assert_close(first, 1.0);
-        assert_close(second, 0.0);
+        assert_close(first, 0.0);
+        assert_close(second, 1.0);
     }
 
     #[test]
@@ -627,7 +625,6 @@ mod tests {
         let mut spatial = settled_spatial_source(source, 2, 1.0, 0.0);
 
         let first = spatial.next().unwrap();
-
         let second = spatial.next().unwrap();
 
         let expected = 0.75 * FRAC_PI_4.cos();
@@ -642,7 +639,7 @@ mod tests {
          * next() currently returns:
          * (processed_right, processed_left)
          */
-        assert_close(first, -expected);
-        assert_close(second, expected);
+        assert_close(first, expected);
+        assert_close(second, -expected);
     }
 }
