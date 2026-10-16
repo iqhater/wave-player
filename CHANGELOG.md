@@ -2,6 +2,24 @@
 
 ### 🚀 Features
 
+- Add cached album art to track lists
+- *(player)* Add queue navigation and shuffle
+- *(player)* Add realtime volume meter
+
+### 🐛 Bug Fixes
+
+- *(lufs)* Emit only final integrated reading
+- Align track list columns
+- Recheck source sample rate
+- Prioritize loop over track repeat
+
+### 🧪 Testing
+
+- Align spatial tests with channel order
+## [0.1.0-alpha.12] - 2026-09-13
+
+### 🚀 Features
+
 - *(ui)* Add App Info and close update notice
 
 ### 🐛 Bug Fixes
