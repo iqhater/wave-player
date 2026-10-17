@@ -385,7 +385,10 @@ pub(crate) fn is_playing(state: &AudioState) -> bool {
 }
 
 pub(crate) fn tick(state: &mut AudioState) -> Result<(), AudioError> {
-    if state.track.is_loaded && !state.track.repeat && state.player.empty() {
+    let source_empty = state.player.empty();
+
+    // Обрабатываем реальное окончание аудиоисточника.
+    if state.track.is_loaded && state.track.is_playing && source_empty {
         if loop_boundary_reached(
             &state.loop_state,
             state.track.position,
@@ -393,6 +396,11 @@ pub(crate) fn tick(state: &mut AudioState) -> Result<(), AudioError> {
             true,
         ) {
             seek_to_loop_start(state)?;
+            return Ok(());
+        }
+
+        if state.track.repeat {
+            repeat_from_beginning(state)?;
             return Ok(());
         }
 
@@ -421,12 +429,9 @@ pub(crate) fn tick(state: &mut AudioState) -> Result<(), AudioError> {
         return Ok(());
     }
 
-    if repeat_early(state) {
-        repeat_from_beginning(state)?;
-        return Ok(());
-    }
-
-    if state.track.position >= state.track.duration {
+    // При повторе ждём фактического окончания источника.
+    // Это не обрезает последние миллисекунды трека.
+    if state.track.position >= state.track.duration && !state.track.repeat {
         finish_track(state)?;
         return Ok(());
     }
@@ -438,15 +443,6 @@ pub(crate) fn tick(state: &mut AudioState) -> Result<(), AudioError> {
 
 fn loop_is_active(loop_state: &LoopState) -> bool {
     loop_state.enabled && loop_state.end > loop_state.start
-}
-
-const REPEAT_GUARD: Duration = Duration::from_millis(200);
-
-fn repeat_early(state: &AudioState) -> bool {
-    state.track.repeat
-        && !loop_is_active(&state.loop_state)
-        && state.track.duration > REPEAT_GUARD
-        && state.track.position >= state.track.duration.saturating_sub(REPEAT_GUARD)
 }
 
 fn loop_boundary_reached(
@@ -508,15 +504,17 @@ fn mark_finished(state: &mut AudioState) -> Result<(), AudioError> {
 
 fn repeat_from_beginning(state: &mut AudioState) -> Result<(), AudioError> {
     if state.player.empty() {
-        return mark_finished(state);
+        // Нельзя выполнять try_seek() на уже закончившемся Player.
+        // Пересоздаём pipeline с начала файла.
+        reload_track_with_effects_at(state, Duration::ZERO)?;
+    } else {
+        state.player.pause();
+
+        state
+            .player
+            .try_seek(Duration::ZERO)
+            .map_err(|_| AudioError::SeekFailed)?;
     }
-
-    state.player.pause();
-
-    state
-        .player
-        .try_seek(Duration::ZERO)
-        .map_err(|_| AudioError::SeekFailed)?;
 
     state.track.position = Duration::ZERO;
     state.track.is_playing = true;
@@ -525,7 +523,6 @@ fn repeat_from_beginning(state: &mut AudioState) -> Result<(), AudioError> {
     state.track.play_count_recorded = false;
 
     state.set_progress(Duration::ZERO);
-
     state.player.play();
 
     Ok(())
