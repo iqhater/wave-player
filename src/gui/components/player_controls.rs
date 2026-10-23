@@ -13,10 +13,14 @@ use std::time::Duration;
 #[component]
 pub fn PlayerControls() -> Element {
     let ctx = use_context::<PlayerContext>();
+    let playback = use_context::<PlaybackUIState>();
 
     let mut position = use_signal(|| 0.0);
     let mut duration = use_signal(|| Duration::from_secs(0));
-    let mut is_playing = use_signal(|| false);
+
+    // Общее состояние RootLayout: переживает размонтирование PlayerControls.
+    let mut is_playing = playback.is_playing;
+
     let mut repeat_enabled = use_signal(|| ctx.config.read().audio.repeat_track);
     let mut has_next = use_signal(|| false);
     let mut shuffle_enabled = use_signal(|| false);
@@ -46,6 +50,12 @@ pub fn PlayerControls() -> Element {
                     PlayerEvent::Finished => {
                         is_playing.set(false);
                         position.set(0.0); // сброс на 0;
+                    }
+                    PlayerEvent::PlayerState {
+                        is_playing: playing,
+                        ..
+                    } => {
+                        is_playing.set(playing);
                     }
                     PlayerEvent::QueueChanged {
                         has_next: next_available,

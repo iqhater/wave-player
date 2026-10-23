@@ -1,14 +1,14 @@
 {
   "window": {
-    "width": 1424,
-    "height": 1013,
-    "x": 769,
-    "y": 52,
+    "width": 1303,
+    "height": 947,
+    "x": 825,
+    "y": 94,
     "maximized": false
   },
   "theme": "Dark",
   "audio": {
-    "volume": 0.35,
+    "volume": 0.2,
     "speed": 1.0,
     "preserve_pitch": false,
     "repeat_track": false,
