@@ -2,6 +2,15 @@
 
 ### 🚀 Features
 
+- *(config)* Persist settings and window state
+
+### 🐛 Bug Fixes
+
+- Restart repeated tracks at source end
+## [0.1.0-alpha.13] - 2026-10-16
+
+### 🚀 Features
+
 - Add cached album art to track lists
 - *(player)* Add queue navigation and shuffle
 - *(player)* Add realtime volume meter
