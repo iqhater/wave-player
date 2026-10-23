@@ -79,8 +79,14 @@ pub fn PlayerControls() -> Element {
                     click_handler: {
                         move |_| {
                             let is_track_repeated = !repeat_enabled();
-                            let _ = ctx.command_tx.read().send(PlayerCommand::ToggleRepeatTrack(is_track_repeated));
-                            repeat_enabled.set(is_track_repeated);
+
+                            let _ = ctx.command_tx.read().send(PlayerCommand::ToggleRepeatTrack(is_track_repeated)).is_ok();
+                            {
+                                repeat_enabled.set(is_track_repeated);
+                                ctx.update_config(|config| {
+                                    config.audio.repeat_track = is_track_repeated;
+                                });
+                            }
                         }
                     }}
                 div {
@@ -288,6 +294,10 @@ fn SpeedControl() -> Element {
                                                 {
                                                     speed.set(val);
                                                     show_speed_popup.set(false);
+
+                                                    ctx.update_config(|config| {
+                                                        config.audio.speed = val;
+                                                    });
                                                 }
                                             },
 
@@ -329,7 +339,14 @@ fn SpeedControl() -> Element {
                                         {
                                             speed.set(value);
                                         }
-                                    }
+                                    },
+
+                                    onchange: move |_| {
+                                        let value = speed();
+                                        ctx.update_config(|config| {
+                                            config.audio.speed = value;
+                                        });
+                                    },
                                 }
                             }
 
@@ -351,7 +368,6 @@ fn SpeedControl() -> Element {
 
                                 onchange: move |_| {
                                     let enabled = !is_preserve_pitch();
-                                    // let enabled = evt.checked();
 
                                     if ctx
                                         .command_tx
@@ -360,6 +376,10 @@ fn SpeedControl() -> Element {
                                         .is_ok()
                                     {
                                         is_preserve_pitch.set(enabled);
+
+                                        ctx.update_config(|config| {
+                                            config.audio.preserve_pitch = enabled;
+                                        });
                                     }
                                 }
                             }
@@ -466,6 +486,13 @@ fn VolumeControl() -> Element {
 
                                 volume.set(current_volume);
                             },
+
+                            onchange: move |_| {
+                                let value = volume();
+                                ctx.update_config(|config| {
+                                    config.audio.volume = value;
+                                });
+                            },
                         }
 
                         div {
@@ -508,6 +535,13 @@ fn VolumeControl() -> Element {
 
                     onclick: move |_| {
                         show_volume_slider.toggle();
+                    },
+
+                    onchange: move |_| {
+                        let value = volume();
+                        ctx.update_config(|config| {
+                            config.audio.volume = value;
+                        });
                     },
 
                     span {

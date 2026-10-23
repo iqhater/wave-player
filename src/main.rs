@@ -52,6 +52,29 @@ pub struct PlayerContext {
 
     // Settings JSON app config
     pub config: GenerationalBox<AppConfig, SyncStorage>,
+
+    // Нужен для синхронной записи config.json при закрытии окна.
+    config_store: GenerationalBox<ConfigStore, SyncStorage>,
+}
+
+impl PlayerContext {
+    pub(crate) fn update_config(&self, update: impl FnOnce(&mut AppConfig)) {
+        let mut config = self.config.read().clone();
+        update(&mut config);
+
+        *self.config.write() = config.clone();
+
+        // try_send не блокирует UI, если очередь store временно заполнена.
+        let _ = self
+            .store_cmd_tx
+            .read()
+            .try_send(StoreCommand::SetConfig(config));
+    }
+
+    pub(crate) fn save_config_now(&self) {
+        let config = self.config.read().clone();
+        self.config_store.read().save(&config);
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -63,8 +86,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "desktop")]
     let window = {
         // Размер окна из конфига (или дефолт, если не сохранён)
-        let x: u32 = config.window.width.unwrap_or(1320);
-        let y: u32 = config.window.height.unwrap_or(1040);
+        let width: u32 = config.window.width.unwrap_or(1320);
+        let height: u32 = config.window.height.unwrap_or(1040);
+
+        let position = match (config.window.x, config.window.y) {
+            (Some(x), Some(y)) => Position::new(PhysicalPosition::new(x, y)),
+            _ => Position::new(PhysicalPosition::new(
+                (3840 - width) / 3,
+                (2160 - height) / 10,
+            )),
+        };
 
         // prepare window icon
         let image = image::load_from_memory(include_bytes!("../assets/icon.png"))
@@ -83,11 +114,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 crate::shared::APP_VERSION
             ))
             .with_window_icon(Some(window_icon))
-            .with_inner_size(LogicalSize::new(x, y))
-            .with_position(Position::new(PhysicalPosition::new(
-                (3840 - x) / 3,
-                (2160 - y) / 10,
-            )))
+            .with_inner_size(LogicalSize::new(width, height))
+            .with_position(position)
+            .with_maximized(config.window.maximized)
     };
 
     // 1. Создаем канал связи для команд ОТ UI К audio engine (backend)
@@ -100,6 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // init store communication
     let (store_tx, store_rx) = flume::bounded::<StoreCommand>(32);
+    let context_config_store = config_store.clone();
     let (mut store_broadcast_tx, store_broadcast_rx) = broadcast::<StoreEvent>(12);
     store_broadcast_tx.set_overflow(true);
     run_store_loop(store_rx, store_broadcast_tx, data_dir.clone(), config_store).unwrap();
@@ -138,6 +168,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // app's config context
         config: owner.insert(config),
+
+        config_store: owner.insert(context_config_store),
     };
 
     // Вместо current_dir() используем путь к самому .exe файлу

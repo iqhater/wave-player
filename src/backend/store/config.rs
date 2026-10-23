@@ -2,7 +2,11 @@
 use crate::shared::store_types::AppConfig;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+static SAVE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone)]
 pub struct ConfigStore {
     path: PathBuf,
 }
@@ -32,8 +36,22 @@ impl ConfigStore {
     }
 
     pub fn save(&self, cfg: &AppConfig) {
-        if let Ok(json) = serde_json::to_string_pretty(cfg) {
-            let _ = fs::write(&self.path, json);
+        let Ok(json) = serde_json::to_string_pretty(cfg) else {
+            return;
+        };
+
+        let temporary = self.path.with_extension(format!(
+            "json.{}.{}.tmp",
+            std::process::id(),
+            SAVE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+
+        if fs::write(&temporary, json).is_err() {
+            return;
+        }
+
+        if fs::rename(&temporary, &self.path).is_err() {
+            let _ = fs::remove_file(&temporary);
         }
     }
 }

@@ -9,14 +9,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub fn FiltersAndSpatial() -> Element {
     let ctx = use_context::<PlayerContext>();
 
+    let audio = ctx.config.read().audio.clone();
     let mut show_menu_popup = use_signal(|| false);
-    let mut ms_mode = use_signal(|| "none".to_string()); //TODO: enum Signal<String> ("none", "mid", "side")
-    let stereo_width = use_signal(|| ctx.config.read().audio.stereo_width); // Signal<f32>, диапазон 0.0 .. 2.0 (дефолт 1.0)
-    let pan = use_signal(|| ctx.config.read().audio.pan); // Signal<f32>, диапазон -1.0 .. 1.0 (дефолт 0.0)
-    let lp_cutoff = use_signal(|| 20000.0f32); // Signal<f32>, диапазон 20.0 .. 20000.0
-    let hp_cutoff = use_signal(|| 20.0f32); // Signal<f32>, диапазон 20.0 .. 20000.0
-    let mut lp_enabled = use_signal(|| false); // Signal<bool>
-    let mut hp_enabled = use_signal(|| false); // Signal<bool>
+    let mut ms_mode = use_signal(|| match audio.mid_side {
+        1 => "mid".to_string(),
+        2 => "side".to_string(),
+        _ => "none".to_string(),
+    });
+    let stereo_width = use_signal(|| audio.stereo_width); // Signal<f32>, диапазон 0.0 .. 2.0 (дефолт 1.0)
+    let pan = use_signal(|| audio.pan); // Signal<f32>, диапазон -1.0 .. 1.0 (дефолт 0.0)
+    let lp_cutoff = use_signal(|| audio.low_pass.unwrap_or(20_000.0));
+    let hp_cutoff = use_signal(|| audio.high_pass.unwrap_or(20.0));
+    let mut lp_enabled = use_signal(|| audio.low_pass.is_some());
+    let mut hp_enabled = use_signal(|| audio.high_pass.is_some());
 
     let pan_text = if pan() == 0.0 {
         "Center".to_string()
@@ -60,6 +65,7 @@ pub fn FiltersAndSpatial() -> Element {
                                     onclick: move |_| {
                                         ms_mode.set("none".to_string());
                                         let _ = ctx.command_tx.read().send(PlayerCommand::SetMidSideMode(0));
+                                        ctx.update_config(|config| config.audio.mid_side = 0);
                                     },
                                     "Stereo"
                                 }
@@ -69,6 +75,7 @@ pub fn FiltersAndSpatial() -> Element {
                                     onclick:  move |_| {
                                         ms_mode.set("mid".to_string());
                                         let _ = ctx.command_tx.read().send(PlayerCommand::SetMidSideMode(1));
+                                        ctx.update_config(|config| config.audio.mid_side = 1);
                                     },
                                     "Mid"
                                 }
@@ -78,6 +85,7 @@ pub fn FiltersAndSpatial() -> Element {
                                     onclick: move |_| {
                                         ms_mode.set("side".to_string());
                                         let _ = ctx.command_tx.read().send(PlayerCommand::SetMidSideMode(2));
+                                        ctx.update_config(|config| config.audio.mid_side = 2);
                                     },
                                     "Side"
                                 }
@@ -106,6 +114,12 @@ pub fn FiltersAndSpatial() -> Element {
                                             let _ = ctx.command_tx.read().send(PlayerCommand::SetStereoWidth(w));
                                         }
                                     },
+                                    on_value_commit: {
+                                        let ctx = ctx.clone();
+                                        move |w| {
+                                            ctx.update_config(|config| config.audio.stereo_width = w);
+                                        }
+                                    },
                                 }
 
                                 // Ползунок панорамирования (Баланс Лево / Право)
@@ -120,6 +134,12 @@ pub fn FiltersAndSpatial() -> Element {
                                         let ctx = ctx.clone();
                                         move |p| {
                                             let _ = ctx.command_tx.read().send(PlayerCommand::SetPan(p));
+                                        }
+                                    },
+                                    on_value_commit: {
+                                        let ctx = ctx.clone();
+                                        move |p| {
+                                            ctx.update_config(|config| config.audio.pan = p);
                                         }
                                     },
                                 }
@@ -146,9 +166,14 @@ pub fn FiltersAndSpatial() -> Element {
                                                 onchange: move |_| {
                                                     let new_state = !lp_enabled();
                                                     lp_enabled.set(new_state);
-                                                    let _ = ctx.command_tx.read().send(PlayerCommand::SetLowPassFilter(
-                                                        if new_state { Some(lp_cutoff()) } else { None },
-                                                    ));
+
+                                                    let cutoff = new_state.then(|| lp_cutoff());
+
+                                                    let _ = ctx.command_tx.read().send(PlayerCommand::SetLowPassFilter(cutoff));
+
+                                                    ctx.update_config(|config| {
+                                                        config.audio.low_pass = cutoff;
+                                                    });
                                                 },
                                             }
                                         }
@@ -172,6 +197,15 @@ pub fn FiltersAndSpatial() -> Element {
                                                     }
                                                 }
                                             },
+                                            on_value_commit: {
+                                                move |c| {
+                                                    if lp_enabled() {
+                                                        ctx.update_config(|config| {
+                                                            config.audio.low_pass = Some(c);
+                                                        });
+                                                    }
+                                                }
+                                            },
                                         }
                                     }
 
@@ -186,9 +220,14 @@ pub fn FiltersAndSpatial() -> Element {
                                                 onchange: move |_| {
                                                     let new_state = !hp_enabled();
                                                     hp_enabled.set(new_state);
-                                                    let _ = ctx.command_tx.read().send(PlayerCommand::SetHighPassFilter(
-                                                        if new_state { Some(hp_cutoff()) } else { None },
-                                                    ));
+
+                                                    let cutoff = new_state.then(|| hp_cutoff());
+
+                                                    let _ = ctx.command_tx.read().send(PlayerCommand::SetHighPassFilter(cutoff));
+
+                                                    ctx.update_config(|config| {
+                                                        config.audio.high_pass = cutoff;
+                                                    });
                                                 },
                                             }
                                         }
@@ -211,7 +250,16 @@ pub fn FiltersAndSpatial() -> Element {
                                                         let _ = ctx.command_tx.read().send(PlayerCommand::SetHighPassFilter(Some(c)));
                                                     }
                                                 }
-                                            }
+                                            },
+                                            on_value_commit: {
+                                                move |c| {
+                                                    if hp_enabled() {
+                                                        ctx.update_config(|config| {
+                                                            config.audio.high_pass = Some(c);
+                                                        });
+                                                    }
+                                                }
+                                            },
                                         }
                                     }
 
@@ -244,6 +292,7 @@ fn AudioKnob(
     disabled: Option<bool>,
     #[props(optional)] logarithmic: Option<bool>,
     #[props(optional)] on_value_change: Option<EventHandler<f32>>,
+    #[props(optional)] on_value_commit: Option<EventHandler<f32>>,
 ) -> Element {
     let is_disabled = disabled.unwrap_or(false);
     let is_logarithmic = logarithmic.unwrap_or(false);
@@ -355,8 +404,12 @@ fn AudioKnob(
                 onpointerup: move |evt| {
                     // if !is_dragging() { return; }
                     is_dragging.set(false);
-                    let knob_id = knob_id();
 
+                    if let Some(cb) = &on_value_commit {
+                        cb.call(value());
+                    }
+
+                    let knob_id = knob_id();
                     let p_id = evt.pointer_id();
                     let js_code = format!(
                         "const el = document.getElementById('{knob_id}'); \
@@ -370,8 +423,12 @@ fn AudioKnob(
                 onpointercancel: move |evt| {
                     // if !is_dragging() { return; }
                     is_dragging.set(false);
-                    let knob_id = knob_id();
 
+                    if let Some(cb) = &on_value_commit {
+                        cb.call(value());
+                    }
+
+                    let knob_id = knob_id();
                     let p_id = evt.pointer_id();
                     let js_code = format!(
                         "const el = document.getElementById('{knob_id}'); \
@@ -388,7 +445,12 @@ fn AudioKnob(
                 ondoubleclick: move |_| {
                     is_dragging.set(false);
                     value.set(default_value);
+
                     if let Some(cb) = &on_value_change {
+                        cb.call(default_value);
+                    }
+
+                    if let Some(cb) = &on_value_commit {
                         cb.call(default_value);
                     }
                 },

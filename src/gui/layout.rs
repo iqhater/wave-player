@@ -1,4 +1,5 @@
 use super::route::Route;
+use crate::shared::command_types::PlayerCommand;
 use dioxus::prelude::*;
 
 use super::components::{
@@ -12,6 +13,13 @@ use super::theme::{Theme, use_theme, use_theme_provider};
 use crate::PlayerContext;
 use crate::shared::event_types::{BeatGridData, PlayerEvent, StoreEvent};
 use futures_util::StreamExt;
+
+#[cfg(feature = "desktop")]
+use dioxus::desktop::tao::dpi::{LogicalSize, PhysicalPosition};
+#[cfg(feature = "desktop")]
+use dioxus::desktop::tao::event::Event as TaoEvent;
+#[cfg(feature = "desktop")]
+use dioxus::desktop::{WindowEvent, use_window, use_wry_event_handler};
 
 // Geist link "https://fonts.googleapis.com/css2?family=Geist:wght@100;300;400;500;600;700;800;900&display=swap"
 static FAVICON: Asset = asset!("/assets/icon.png");
@@ -71,6 +79,31 @@ pub struct LoopUIState {
     pub enabled: Signal<bool>,
 }
 
+#[cfg(feature = "desktop")]
+fn persist_window_state(
+    ctx: &PlayerContext,
+    size: Option<LogicalSize<u32>>,
+    position: Option<PhysicalPosition<i32>>,
+    maximized: bool,
+) {
+    ctx.update_config(|config| {
+        // При maximized не перезаписываем нормальный размер окна.
+        if let Some(size) = size {
+            if !maximized {
+                config.window.width = Some(size.width);
+                config.window.height = Some(size.height);
+            }
+        }
+
+        if let Some(position) = position {
+            config.window.x = Some(position.x);
+            config.window.y = Some(position.y);
+        }
+
+        config.window.maximized = maximized;
+    });
+}
+
 #[component]
 pub fn RootLayout() -> Element {
     let ctx = use_context::<PlayerContext>();
@@ -80,10 +113,10 @@ pub fn RootLayout() -> Element {
     use_context_provider(|| MobileMenuOpen(mobile_menu_open));
 
     // Settings config
-    let cursor_follows_loop = use_signal(|| ctx.config.read().ui.timeline_cursor_follows_loop);
-    let show_time_markers = use_signal(|| ctx.config.read().ui.show_time_markers);
-    let loop_repeat_region = use_signal(|| ctx.config.read().ui.loop_repeat_region);
-    let timeline_progress_view = use_signal(|| ctx.config.read().ui.timeline_progress_view);
+    let mut cursor_follows_loop = use_signal(|| ctx.config.read().ui.timeline_cursor_follows_loop);
+    let mut show_time_markers = use_signal(|| ctx.config.read().ui.show_time_markers);
+    let mut loop_repeat_region = use_signal(|| ctx.config.read().ui.loop_repeat_region);
+    let mut timeline_progress_view = use_signal(|| ctx.config.read().ui.timeline_progress_view);
     let mut show_beat_grid = use_signal(|| ctx.config.read().ui.show_beat_grid);
     let mut beat_grid_snap = use_signal(|| ctx.config.read().ui.beat_grid_snap);
 
@@ -97,6 +130,47 @@ pub fn RootLayout() -> Element {
     // Эти настройки доступны всем дочерним компонентам, включая Settings и Waveform.
     use_context_provider(|| show_beat_grid);
     use_context_provider(|| beat_grid_snap);
+
+    #[cfg(feature = "desktop")]
+    {
+        let window = use_window();
+
+        let mut last_save: Option<std::time::Instant> = None;
+        let mut last_size: Option<LogicalSize<u32>> = None;
+        let mut last_position: Option<PhysicalPosition<i32>> = None;
+
+        use_wry_event_handler(move |event, _| {
+            let TaoEvent::WindowEvent { event, .. } = event else {
+                return;
+            };
+
+            match event {
+                WindowEvent::Resized(size) => {
+                    last_size = Some(size.to_logical::<u32>(window.scale_factor()));
+                }
+                WindowEvent::Moved(position) => {
+                    last_position = Some(*position);
+                }
+                WindowEvent::CloseRequested => {
+                    persist_window_state(&ctx, last_size, last_position, window.is_maximized());
+
+                    // Дописываем config.json синхронно, до завершения процесса.
+                    ctx.save_config_now();
+                    return;
+                }
+                _ => return,
+            }
+
+            let should_save = last_save
+                .is_none_or(|time| time.elapsed() >= std::time::Duration::from_millis(750));
+
+            if should_save {
+                last_save = Some(std::time::Instant::now());
+
+                persist_window_state(&ctx, last_size, last_position, window.is_maximized());
+            }
+        });
+    }
 
     let hide_controls = matches!(
         route,
@@ -145,6 +219,48 @@ pub fn RootLayout() -> Element {
         enabled: loop_enabled,
     });
 
+    // Применяем сохранённые аудионастройки к движку после монтирования UI.
+    use_effect(move || {
+        let config = ctx.config.read().clone();
+
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetVolume(config.audio.volume));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetSpeed(config.audio.speed));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetPreservePitch(config.audio.preserve_pitch));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::ToggleRepeatTrack(config.audio.repeat_track));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetLowPassFilter(config.audio.low_pass));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetHighPassFilter(config.audio.high_pass));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetMidSideMode(config.audio.mid_side));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetStereoWidth(config.audio.stereo_width));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetPan(config.audio.pan));
+    });
+
     // 1. СРАЗУ читаем сохраненную тему из конфига при старте приложения
     let saved_theme = Theme::from_pref(ctx.config.read().theme.clone());
 
@@ -176,6 +292,10 @@ pub fn RootLayout() -> Element {
                         *ctx.config.write() = config.clone();
                         theme.set(Theme::from_pref(config.theme.clone()));
 
+                        cursor_follows_loop.set(config.ui.timeline_cursor_follows_loop);
+                        show_time_markers.set(config.ui.show_time_markers);
+                        loop_repeat_region.set(config.ui.loop_repeat_region);
+                        timeline_progress_view.set(config.ui.timeline_progress_view);
                         show_beat_grid.set(config.ui.show_beat_grid);
                         beat_grid_snap.set(config.ui.beat_grid_snap);
 

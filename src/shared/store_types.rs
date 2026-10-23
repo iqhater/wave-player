@@ -38,14 +38,6 @@ pub struct TrackData {
     pub cover: Vec<u8>,
 }
 
-/// Избранное.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Favorites {
-    pub id: i64,
-    pub name: String,
-    pub track_paths: Vec<PathBuf>,
-}
-
 /// Трек с датой последнего прослушивания.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecentTrack {
@@ -75,6 +67,8 @@ pub struct AppConfig {
 pub struct WindowConfig {
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
     pub maximized: bool,
 }
 
@@ -151,5 +145,43 @@ impl Default for UiConfig {
             show_beat_grid: true,
             beat_grid_snap: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::{AppConfig, WindowConfig};
+
+    #[test]
+    fn config_should_roundtrip_all_settings() {
+        let mut config = AppConfig::default();
+
+        config.window = WindowConfig {
+            width: Some(1600),
+            height: Some(900),
+            x: Some(120),
+            y: Some(80),
+            maximized: true,
+        };
+        config.audio.volume = 0.8;
+        config.audio.speed = 1.25;
+        config.audio.preserve_pitch = true;
+        config.audio.repeat_track = true;
+        config.audio.low_pass = Some(12_000.0);
+        config.audio.high_pass = Some(40.0);
+        config.audio.mid_side = 2;
+        config.audio.stereo_width = 1.4;
+        config.audio.pan = -0.3;
+        config.ui.timeline_cursor_follows_loop = true;
+        config.ui.show_time_markers = false;
+        config.ui.loop_repeat_region = true;
+        config.ui.timeline_progress_view = true;
+        config.ui.show_beat_grid = false;
+        config.ui.beat_grid_snap = true;
+
+        let json = serde_json::to_string(&config).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored, config);
     }
 }

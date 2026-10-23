@@ -57,7 +57,14 @@ pub fn Settings() -> Element {
                         id: "timeline-cursor-behavior",
                         text: "Enable timeline cursor followed by loop movement.",
                         checked: is_cursor_checked,
-                        onchange: move |_| is_cursor_checked.set(!is_cursor_checked()),
+                        onchange: move |_| {
+                            let enabled = !is_cursor_checked();
+                            is_cursor_checked.set(enabled);
+
+                            ctx.update_config(|config| {
+                                config.ui.timeline_cursor_follows_loop = enabled;
+                            });
+                        },
                     }
 
                     SettingsCheckbox {
@@ -104,7 +111,14 @@ pub fn Settings() -> Element {
                         id: "timeline-progress-view",
                         text: "Use the round cursor progress view.",
                         checked: is_standard_timeline_view,
-                        onchange: move |_| is_standard_timeline_view.set(!is_standard_timeline_view()),
+                        onchange: move |_| {
+                            let enabled = !is_standard_timeline_view();
+                            is_standard_timeline_view.set(enabled);
+
+                            ctx.update_config(|config| {
+                                config.ui.timeline_progress_view = enabled;
+                            });
+                        },
                     }
                 }
             }
