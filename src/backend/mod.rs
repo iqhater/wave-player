@@ -12,3 +12,4 @@ mod spatial;
 mod state;
 pub mod store;
 pub mod timestretch;
+pub(crate) mod waveform_cache;

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use super::beat_grid::BeatGrid;
 use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
-use crate::shared::event_types::PlayerEvent;
+use crate::shared::event_types::{BeatGridData, PlayerEvent};
 
 use crate::gui::layout::{
     BeatGridSnap, LoopRepeatRegion, PlaybackUIState, ShowBeatGrid, ShowTimeMarkers,
@@ -261,56 +261,47 @@ pub fn Waveform() -> Element {
                 // Timeline click to seek
                 onclick: {
                     move |e| {
-
                         if dragging().is_some() {
-                            // dragging.set(None);
+                            return;
+                        }
+
+                        let duration = duration_secs();
+                        let Some((_, width)) = container_rect() else {
+                            return;
+                        };
+
+                        if duration <= 0.0 || width <= 0.0 {
                             return;
                         }
 
                         let element_x = e.element_coordinates().x as f32;
+                        let pct = (element_x / width).clamp(0.0, 1.0);
 
-                        let mut snap_eval = dioxus::document::eval(
-                            r#"
-                            let d = await dioxus.recv();
+                        let zoom = zoom_level().max(1.0);
+                        let visible_duration = duration / zoom;
+                        let view_start_fraction = (view_start / 100.0).clamp(0.0, 1.0);
 
-                            const canvas =
-                                document.getElementById("waveform-canvas");
+                        let raw_secs = (view_start_fraction * duration + pct * visible_duration)
+                            .clamp(0.0, duration);
 
-                            const width =
-                                canvas ? canvas.clientWidth : 1;
+                        let secs = if show_grid() && grid_snap() {
+                            let bpm_signal = playback.bpm;
+                            let grid_signal = playback.beat_grid;
 
-                            const pct =
-                                Math.max(0, Math.min(1, d.x / width));
+                            let bpm = bpm_signal();
+                            let grid = grid_signal();
 
-                            const rawSecs =
-                                window.waveTimeAtViewportPct
-                                    ? window.waveTimeAtViewportPct(pct)
-                                    : d.duration * pct;
+                            grid.as_ref().map_or(raw_secs, |grid| {
+                                snap_to_grid(grid, bpm, raw_secs, width, zoom, duration)
+                            })
+                        } else {
+                            raw_secs
+                        };
 
-                            const snappedSecs =
-                                d.gridEnabled && d.gridSnapEnabled && window.snapToGrid
-                                    ? window.snapToGrid(rawSecs)
-                                    : rawSecs;
-
-                            dioxus.send(snappedSecs);
-                            "#
-                        );
-
-                        spawn(async move {
-                            let _ = snap_eval.send(serde_json::json!({
-                                "x": element_x,
-                                "duration": duration_secs(),
-                                "gridEnabled": show_grid(),
-                                "gridSnapEnabled": grid_snap(),
-                            }));
-                            if let Ok(serde_json::Value::Number(s)) = snap_eval.recv().await {
-                                if let Some(secs) = s.as_f64() {
-                                    let _ = ctx.command_tx.read().send(PlayerCommand::Seek(
-                                        Duration::from_secs_f32(secs as f32),
-                                    ));
-                                }
-                            }
-                        });
+                        let _ = ctx
+                            .command_tx
+                            .read()
+                            .send(PlayerCommand::Seek(Duration::from_secs_f32(secs)));
                     }
                 },
 
@@ -445,4 +436,87 @@ fn format_time(secs: u32) -> String {
     let m = secs / 60;
     let s = secs % 60;
     format!("{:02}:{:02}", m, s)
+}
+
+const GRID_MIN_SPACING_PX: f32 = 30.0;
+
+fn grid_snap_interval(
+    grid: &BeatGridData,
+    bpm: f32,
+    width: f32,
+    zoom: f32,
+    duration: f32,
+) -> Option<(f32, f32)> {
+    if bpm <= 0.0 || width <= 0.0 || duration <= 0.0 {
+        return None;
+    }
+
+    let visible_duration = duration / zoom.max(1.0);
+    let pixels_per_second = width / visible_duration.max(0.001);
+
+    let beat_duration = 60.0 / bpm;
+    let beat_phase = grid.beats.first().copied().unwrap_or(grid.offset);
+    let bar_phase = grid.bars.first().copied().unwrap_or(beat_phase);
+
+    let mut interval = beat_duration;
+    let mut phase = beat_phase;
+
+    // Та же логика, что в drawBeatGrid: на отдалённом масштабе
+    // рисуются такты и кратные им линии.
+    if interval * pixels_per_second < GRID_MIN_SPACING_PX {
+        interval = beat_duration * 4.0;
+        phase = bar_phase;
+    }
+
+    while interval * pixels_per_second < GRID_MIN_SPACING_PX {
+        interval *= 2.0;
+    }
+
+    Some((interval, phase))
+}
+
+fn snap_to_grid(
+    grid: &BeatGridData,
+    bpm: f32,
+    seconds: f32,
+    width: f32,
+    zoom: f32,
+    duration: f32,
+) -> f32 {
+    let Some((interval, phase)) = grid_snap_interval(grid, bpm, width, zoom, duration) else {
+        return seconds;
+    };
+
+    let index = ((seconds - phase) / interval).round();
+    let snapped = phase + index * interval;
+
+    snapped.clamp(0.0, duration)
+}
+
+#[cfg(test)]
+mod grid_snap_tests {
+    use super::snap_to_grid;
+    use crate::shared::event_types::BeatGridData;
+
+    fn grid() -> BeatGridData {
+        BeatGridData {
+            offset: 0.0,
+            beats: vec![0.0, 0.5, 1.0, 1.5, 2.0],
+            bars: vec![0.0, 2.0],
+            downbeats: vec![0.0],
+        }
+    }
+
+    #[test]
+    fn snap_should_use_beats_when_they_are_visible() {
+        let snapped = snap_to_grid(&grid(), 120.0, 1.24, 1000.0, 10.0, 10.0);
+        assert!((snapped - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn snap_should_follow_visible_grid_lines_when_zoomed_out() {
+        // 120 s, 600 px, zoom 1 → 5 px/s. Шаг сетки доходит до 8 s.
+        let snapped = snap_to_grid(&grid(), 120.0, 58.0, 600.0, 1.0, 120.0);
+        assert!((snapped - 56.0).abs() < 1e-4);
+    }
 }

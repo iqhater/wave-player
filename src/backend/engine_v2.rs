@@ -45,33 +45,24 @@ pub fn run_audio_loop_v2(
         );
 
         loop {
+            match cmd_rx.recv_timeout(Duration::from_millis(10)) {
+                Ok(command) => {
+                    if let Err(error) = dispatch::dispatch(&mut state, command) {
+                        let _ = state.error_tx.try_broadcast(error);
+                    }
+                }
+                Err(flume::RecvTimeoutError::Timeout) => {}
+                Err(flume::RecvTimeoutError::Disconnected) => break,
+            }
+
             if let Err(error) = playback::tick(&mut state) {
                 let _ = state.error_tx.try_broadcast(error);
             }
 
-            let was_playing = playback::is_playing(&state);
-
-            let command = if was_playing {
-                cmd_rx.try_recv().ok()
-            } else {
-                match cmd_rx.recv() {
-                    Ok(command) => Some(command),
-                    Err(_) => break,
-                }
-            };
-
-            if let Some(command) = command {
-                if let Err(error) = dispatch::dispatch(&mut state, command) {
-                    let _ = state.error_tx.try_broadcast(error);
-                }
-            }
+            state.analysis.publish(&state.status_tx);
 
             let is_playing = playback::is_playing(&state);
             state.publish_meter_if_needed(is_playing);
-
-            if is_playing {
-                thread::sleep(Duration::from_millis(10));
-            }
         }
     });
 

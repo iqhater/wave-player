@@ -10,7 +10,7 @@ use crate::backend::metadata::TrackMetadata;
 // use super::screens::home::Home;
 use super::theme::{Theme, use_theme, use_theme_provider};
 use crate::PlayerContext;
-use crate::shared::event_types::{PlayerEvent, StoreEvent};
+use crate::shared::event_types::{BeatGridData, PlayerEvent, StoreEvent};
 use futures_util::StreamExt;
 
 // Geist link "https://fonts.googleapis.com/css2?family=Geist:wght@100;300;400;500;600;700;800;900&display=swap"
@@ -57,6 +57,11 @@ pub struct PlaybackUIState {
 
     pub metadata: Signal<Option<TrackMetadata>>,
     pub waveform_peaks: Signal<Vec<f32>>,
+
+    pub(crate) bpm: Signal<f32>,
+    pub(crate) key_name: Signal<String>,
+    pub(crate) key_numerical: Signal<String>,
+    pub(crate) beat_grid: Signal<Option<BeatGridData>>,
 }
 
 #[derive(Clone, Copy)]
@@ -107,6 +112,11 @@ pub fn RootLayout() -> Element {
     let metadata = use_signal(|| None::<TrackMetadata>);
     let waveform_peaks = use_signal(|| vec![0.0_f32; 500]);
 
+    let bpm = use_signal(|| 0.0_f32);
+    let key_name = use_signal(|| "—".to_string());
+    let key_numerical = use_signal(|| String::new());
+    let beat_grid = use_signal(|| None::<BeatGridData>);
+
     let loop_start = use_signal(|| 0.0_f32);
     let loop_end = use_signal(|| 0.0_f32);
     let loop_enabled = use_signal(|| false);
@@ -123,6 +133,10 @@ pub fn RootLayout() -> Element {
         preserve_pitch,
         metadata,
         waveform_peaks,
+        bpm,
+        key_name,
+        key_numerical,
+        beat_grid,
     });
 
     use_context_provider(|| LoopUIState {
@@ -159,15 +173,11 @@ pub fn RootLayout() -> Element {
             while let Some(store_event) = store_event_rx.next().await {
                 match store_event {
                     StoreEvent::ConfigLoaded { config } => {
-                        // Записываем через .write()
                         *ctx.config.write() = config.clone();
                         theme.set(Theme::from_pref(config.theme.clone()));
 
-                        let grid_enabled = config.ui.show_beat_grid;
-                        show_beat_grid.set(grid_enabled);
-
-                        // Snap не может быть включён при отключённой сетке.
-                        beat_grid_snap.set(grid_enabled && config.ui.beat_grid_snap);
+                        show_beat_grid.set(config.ui.show_beat_grid);
+                        beat_grid_snap.set(config.ui.beat_grid_snap);
 
                         // Синхронизируем UI-состояние аудионастроек с конфигурацией.
                         speed.set(config.audio.speed.clamp(0.25, 2.0));
@@ -190,6 +200,11 @@ pub fn RootLayout() -> Element {
         let mut metadata = metadata;
         let mut waveform_peaks = waveform_peaks;
 
+        let mut bpm = bpm;
+        let mut key_name = key_name;
+        let mut key_numerical = key_numerical;
+        let mut beat_grid = beat_grid;
+
         async move {
             while let Some(event) = status_rx.next().await {
                 match event {
@@ -203,6 +218,11 @@ pub fn RootLayout() -> Element {
                         is_playing.set(true);
                         metadata.set(Some(track_metadata));
                         waveform_peaks.set(vec![0.0_f32; 500]);
+
+                        bpm.set(0.0);
+                        key_name.set("—".to_string());
+                        key_numerical.set(String::new());
+                        beat_grid.set(None);
                     }
 
                     PlayerEvent::Paused => {
@@ -236,6 +256,18 @@ pub fn RootLayout() -> Element {
                                 }
                             }
                         });
+                    }
+
+                    PlayerEvent::BpmKeyDetected {
+                        bpm: detected_bpm,
+                        beat_grid: detected_grid,
+                        key_name: detected_key,
+                        key_numerical: detected_numerical,
+                    } => {
+                        bpm.set(detected_bpm);
+                        key_name.set(detected_key);
+                        key_numerical.set(detected_numerical);
+                        beat_grid.set(Some(detected_grid));
                     }
 
                     _ => {}

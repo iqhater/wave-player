@@ -18,8 +18,8 @@
   },
   "ui": {
     "timeline_cursor_follows_loop": false,
-    "show_time_markers": false,
-    "loop_repeat_region": false,
+    "show_time_markers": true,
+    "loop_repeat_region": true,
     "timeline_progress_view": false,
     "show_beat_grid": true,
     "beat_grid_snap": true

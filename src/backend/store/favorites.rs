@@ -71,7 +71,8 @@ impl DbStore {
                         t.bpm,
                         t.key,
                         t.play_count,
-                        t.cover_cache_path
+                        t.cover_cache_path,
+                        t.waveform_cache_path
                  FROM tracks t
                  INNER JOIN favorites f ON f.track_id = t.id
                  ORDER BY f.created_at DESC",
@@ -91,10 +92,9 @@ impl DbStore {
                     key: row.get(9)?,
                     play_count: row.get(10)?,
                     cover_cache_path: row.get::<_, Option<String>>(11)?.map(PathBuf::from),
+                    waveform_cache_path: row.get::<_, Option<String>>(12)?.map(PathBuf::from),
 
-                    ..Track::default() // audio_fx_params: row.get(12)?,
-                                       // waveform_cache_path: row.get::<_, Option<String>>(13)?.map(PathBuf::from),
-                                       // created_at: row.get(14)?,
+                    ..Track::default()
                 })
             })
             .expect("query favorites")

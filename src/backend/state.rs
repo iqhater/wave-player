@@ -1,3 +1,4 @@
+use crate::backend::analysis::service::AnalysisService;
 use crate::backend::meter::{MeterState, linear_to_dbfs};
 use crate::backend::queue::QueueState;
 use crate::shared::command_types::StoreCommand;
@@ -27,6 +28,8 @@ pub(crate) struct AudioState {
 
     pub(crate) meter: MeterState,
     last_meter_update: Instant,
+
+    pub(crate) analysis: AnalysisService,
 }
 
 impl AudioState {
@@ -38,6 +41,8 @@ impl AudioState {
         error_tx: ErrorSender,
         cover_cache_dir: PathBuf,
     ) -> Self {
+        let analysis = AnalysisService::new(cover_cache_dir.clone(), store_cmd_tx.clone());
+
         Self {
             player,
 
@@ -54,6 +59,8 @@ impl AudioState {
 
             meter: MeterState::new(),
             last_meter_update: Instant::now(),
+
+            analysis,
         }
     }
     pub(crate) fn set_progress(&self, position: Duration) {

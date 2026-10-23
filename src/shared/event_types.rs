@@ -14,7 +14,7 @@ pub struct WaveformEnvelope {
     pub max: f32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BeatGridData {
     pub offset: f32,
     pub beats: Vec<f32>,

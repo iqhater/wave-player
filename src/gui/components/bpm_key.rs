@@ -1,41 +1,23 @@
-use crate::PlayerContext;
-use crate::shared::event_types::PlayerEvent;
+use crate::gui::layout::PlaybackUIState;
 use dioxus::prelude::*;
-use futures_util::StreamExt;
 
 #[component]
 pub fn BpmKey() -> Element {
-    let ctx = use_context::<PlayerContext>();
+    let playback = use_context::<PlaybackUIState>();
 
-    let mut bpm = use_signal(|| 0.0f32);
-    let mut key = use_signal(|| "—".to_string());
-    let mut key_camelot = use_signal(|| "".to_string());
+    let bpm = playback.bpm;
+    let key = playback.key_name;
+    let key_numerical = playback.key_numerical;
 
-    use_future(move || {
-        let mut status_rx = ctx.status_rx.read().clone();
-        async move {
-            while let Some(status) = status_rx.next().await {
-                match status {
-                    PlayerEvent::BpmKeyDetected {
-                        bpm: b,
-                        key_name,
-                        key_numerical,
-                        ..
-                    } => {
-                        bpm.set(b);
-                        key.set(key_name);
-                        key_camelot.set(format!("{}{}{}", "(", key_numerical, ")"));
-                    }
-                    PlayerEvent::Started { .. } => {
-                        bpm.set(0.0);
-                        key.set("—".to_string());
-                        key_camelot.set("".to_string());
-                    }
-                    _ => {}
-                }
-            }
+    let camelot = move || {
+        let numerical = key_numerical();
+
+        if numerical.is_empty() {
+            String::new()
+        } else {
+            format!("({numerical})")
         }
-    });
+    };
 
     rsx! {
         div { class: "flex items-start justify-center gap-12 lg:gap-4",
@@ -47,7 +29,7 @@ pub fn BpmKey() -> Element {
             }
             div { class: "flex flex-col",
                 span { class: "text-label-sm uppercase text-secondary opacity-60", "Key" }
-                span { class: "text-2xl font-bold text-primary lg:text-xl", "{key()} {key_camelot()}" }
+                span { class: "text-2xl font-bold text-primary lg:text-xl", "{key()} {camelot()}" }
             }
         }
     }

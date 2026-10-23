@@ -161,6 +161,41 @@ pub(crate) fn dispatch(
             }
         },
 
+        StoreCommand::LoadCachedAnalysis { path, reply } => {
+            let result = db
+                .load_cached_analysis(&path)
+                .map_err(|error| error.to_string());
+
+            if let Err(error) = &result {
+                eprintln!(
+                    "failed to load analysis metadata for {}: {error}",
+                    path.display()
+                );
+            }
+
+            let _ = reply.try_send(result);
+        }
+
+        StoreCommand::SaveCachedAnalysis {
+            path,
+            waveform_cache_path,
+            data,
+        } => match db.save_cached_analysis(&path, waveform_cache_path.as_deref(), &data) {
+            Ok(true) => {}
+            Ok(false) => {
+                eprintln!(
+                    "cannot save analysis: track is not stored: {}",
+                    path.display()
+                );
+            }
+            Err(error) => {
+                eprintln!(
+                    "failed to save analysis metadata for {}: {error}",
+                    path.display()
+                );
+            }
+        },
+
         _ => {}
     }
 }

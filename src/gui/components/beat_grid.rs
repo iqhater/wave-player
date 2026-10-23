@@ -1,8 +1,5 @@
-use crate::PlayerContext;
-use crate::shared::event_types::{BeatGridData, PlayerEvent};
-// use dioxus::core::use_drop;
+use crate::gui::layout::PlaybackUIState;
 use dioxus::prelude::*;
-use futures_util::StreamExt;
 
 const BEAT_GRID_JS: &str = r#"
     let data = await dioxus.recv();
@@ -180,72 +177,33 @@ const BEAT_GRID_JS: &str = r#"
 
 #[component]
 pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>) -> Element {
-    let ctx = use_context::<PlayerContext>();
-    let mut bpm = use_signal(|| 0.0f32);
-    let mut beat_offset = use_signal(|| 0.0f32);
-    let mut beat_grid = use_signal(|| None::<BeatGridData>);
+    let playback = use_context::<PlaybackUIState>();
 
-    // Слушаем BPM из движка
-    use_future(move || {
-        let mut status_rx = ctx.status_rx.read().clone();
-        async move {
-            while let Some(status) = status_rx.next().await {
-                match status {
-                    PlayerEvent::BpmKeyDetected {
-                        bpm: b,
-                        beat_grid: grid,
-                        ..
-                    } => {
-                        bpm.set(b);
-                        beat_offset.set(grid.offset);
-                        beat_grid.set(Some(grid));
-                    }
-                    PlayerEvent::Started { .. } => {
-                        bpm.set(0.0);
-                        beat_offset.set(0.0);
-                        beat_grid.set(None);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    });
-
-    // Перерисовка при изменении bpm/длительности/настройки
     use_effect(move || {
-        let b = bpm();
-        let d = total_duration();
-        let s = snap_enabled();
-        let offset = beat_offset();
+        // Поля PlaybackUIState — это Signal<T>, а не методы.
+        let bpm_signal = playback.bpm;
+        let grid_signal = playback.beat_grid;
+
+        // Вызов сигнала читает значение и создаёт реактивную зависимость.
+        let bpm = bpm_signal();
+        let duration = total_duration();
+        let snap = snap_enabled();
+        let grid = grid_signal();
+        let offset = grid.as_ref().map(|grid| grid.offset).unwrap_or(0.0);
 
         spawn(async move {
             let eval = dioxus::document::eval(BEAT_GRID_JS);
-            let grid = beat_grid();
 
             let _ = eval.send(serde_json::json!({
-                "bpm": b,
-                "duration": d,
-                "snap": s,
+                "bpm": bpm,
+                "duration": duration,
+                "snap": snap,
                 "offset": offset,
                 "beats": grid.as_ref().map(|grid| &grid.beats),
                 "bars": grid.as_ref().map(|grid| &grid.bars),
             }));
         });
     });
-
-    // Clean up beat grid animation resources on drop
-    /* use_drop(|| {
-        let _ = dioxus::document::eval(
-            r#"
-            if (window.beatGridAnimId !== null) {
-                cancelAnimationFrame(window.beatGridAnimId);
-                window.beatGridAnimId = null;
-            }
-
-            window.drawBeatGrid = undefined;
-            "#,
-        );
-    }); */
 
     rsx! {
         canvas {

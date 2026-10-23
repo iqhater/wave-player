@@ -60,6 +60,12 @@ pub enum PlayerCommand {
     RequestState,
 }
 
+#[derive(Clone, Debug)]
+pub struct CachedTrackAnalysis {
+    pub waveform_cache_path: Option<PathBuf>,
+    pub data: Option<Vec<u8>>,
+}
+
 /// UI → Store: команды на сохранение/чтение. Отдельный канал, не трогает движок.
 #[derive(Clone, Debug)]
 pub enum StoreCommand {
@@ -106,5 +112,16 @@ pub enum StoreCommand {
     /// Удалить трек из истории.
     RemoveRecentTrack {
         track_id: i64,
+    },
+
+    LoadCachedAnalysis {
+        path: PathBuf,
+        reply: flume::Sender<Result<Option<CachedTrackAnalysis>, String>>,
+    },
+
+    SaveCachedAnalysis {
+        path: PathBuf,
+        waveform_cache_path: Option<PathBuf>,
+        data: Vec<u8>,
     },
 }

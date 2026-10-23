@@ -88,6 +88,7 @@ impl DbStore {
                 t.key,
                 t.play_count,
                 t.cover_cache_path,
+                t.waveform_cache_path,
                 r.played_at
              FROM recent_tracks r
              INNER JOIN tracks t ON t.id = r.track_id
@@ -115,10 +116,11 @@ impl DbStore {
                     key: row.get(9)?,
                     play_count: row.get(10)?,
                     cover_cache_path: row.get::<_, Option<String>>(11)?.map(PathBuf::from),
+                    waveform_cache_path: row.get::<_, Option<String>>(12)?.map(PathBuf::from),
 
                     ..Default::default()
                 },
-                played_at: row.get(12)?,
+                played_at: row.get(13)?,
             })
         }) {
             Ok(rows) => rows,

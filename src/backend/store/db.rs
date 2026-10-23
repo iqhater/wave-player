@@ -75,4 +75,36 @@ mod tests {
 
         assert!(tracks_exists);
     }
+
+    #[test]
+    fn analysis_should_store_waveform_reference_separately() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+
+        let mut db = DbStore { conn };
+
+        db.conn
+            .execute(
+                "INSERT INTO tracks (path, file_size, duration)
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params!["music/track.wav", 100, 1000],
+            )
+            .unwrap();
+
+        let track = std::path::Path::new("music/track.wav");
+        let waveform = std::path::Path::new("wavefroms/ab/example.v1.wfm");
+        let metadata = br#"{"bpm_key":null,"loudness":null}"#;
+
+        assert!(
+            db.save_cached_analysis(track, Some(waveform), metadata)
+                .unwrap()
+        );
+
+        let stored = db.load_cached_analysis(track).unwrap().unwrap();
+
+        assert_eq!(
+            (stored.waveform_cache_path, stored.data),
+            (Some(waveform.to_path_buf()), Some(metadata.to_vec()))
+        );
+    }
 }

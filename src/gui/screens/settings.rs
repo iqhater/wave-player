@@ -139,18 +139,11 @@ pub fn Settings() -> Element {
                         let enabled = !is_grid_enabled();
                         is_grid_enabled.set(enabled);
 
-                        // При отключении сетки snap автоматически выключается.
-                        let snap_enabled = if enabled {
-                            is_grid_snap()
-                        } else {
-                            false
-                        };
-
-                        is_grid_snap.set(snap_enabled);
-
+                        // Snap — отдельная настройка. Она просто не применяется,
+                        // пока сетка выключена, и сохраняется при повторном включении.
                         let mut config = ctx.config.read().clone();
                         config.ui.show_beat_grid = enabled;
-                        config.ui.beat_grid_snap = snap_enabled;
+                        config.ui.beat_grid_snap = is_grid_snap();
 
                         *ctx.config.write() = config.clone();
 
@@ -166,11 +159,6 @@ pub fn Settings() -> Element {
                     text: "Snap timeline seeking to the beat grid.",
                     checked: is_grid_snap,
                     onchange: move |_| {
-                        // Snap недоступен без отображаемой сетки.
-                        if !is_grid_enabled() {
-                            is_grid_snap.set(false);
-                            return;
-                        }
 
                         let enabled = !is_grid_snap();
                         is_grid_snap.set(enabled);
