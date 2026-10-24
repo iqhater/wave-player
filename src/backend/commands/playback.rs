@@ -122,7 +122,27 @@ pub(crate) fn pause(state: &mut AudioState) -> Result<(), AudioError> {
 
 /// Resumes the current track.
 pub(crate) fn resume(state: &mut AudioState) -> Result<(), AudioError> {
-    if !state.track.is_loaded || !state.player.is_paused() {
+    if !state.track.is_loaded {
+        return Ok(());
+    }
+
+    // The source is exhausted after a finished track, so restart from the
+    // saved position instead of resuming an empty player.
+    if state.track.finished || state.player.empty() {
+        let position = state.track.position.min(state.track.duration);
+
+        reload_track_with_effects_at(state, position)?;
+
+        state.player.play();
+        state.track.is_playing = true;
+        state.track.started_at = Some(Instant::now());
+
+        let _ = state.status_tx.try_broadcast(PlayerEvent::Resumed);
+
+        return Ok(());
+    }
+
+    if !state.player.is_paused() {
         return Ok(());
     }
 
@@ -142,6 +162,15 @@ pub(crate) fn seek(state: &mut AudioState, position: Duration) -> Result<(), Aud
     }
 
     let position = position.min(state.track.duration);
+
+    // Seeking an exhausted player must rebuild the pipeline: try_seek on a
+    // player whose source is ending can block forever. The same applies when
+    // seeking exactly to the end of the track.
+    let at_end = state.track.duration > Duration::ZERO && position >= state.track.duration;
+
+    if state.track.finished || state.player.empty() || at_end {
+        return reload_track_with_effects_at(state, position);
+    }
 
     if state.playback.preserve_pitch {
         return seek_with_wsola(state, position);
@@ -187,6 +216,13 @@ pub(crate) fn set_volume(state: &mut AudioState, volume: f32) -> Result<(), Audi
     /* let _ = state.status_tx.try_broadcast(PlayerEvent::VolumeChanged {
         volume: state.playback.volume,
     }); */
+
+    Ok(())
+}
+
+/// Sets the manual preamp gain in dB.
+pub(crate) fn set_preamp(state: &mut AudioState, db: f32) -> Result<(), AudioError> {
+    state.playback.set_preamp_db(db);
 
     Ok(())
 }
@@ -335,6 +371,7 @@ fn reload_track_with_effects_at(
     }
 
     state.track.position = position;
+    state.track.finished = false;
 
     state
         .playback
@@ -371,6 +408,7 @@ fn seek_with_wsola(state: &mut AudioState, position: Duration) -> Result<(), Aud
     }
 
     state.track.position = position;
+    state.track.finished = false;
 
     state
         .playback
@@ -484,13 +522,13 @@ fn finish_track(state: &mut AudioState) -> Result<(), AudioError> {
 }
 
 fn mark_finished(state: &mut AudioState) -> Result<(), AudioError> {
-    state
-        .player
-        .try_seek(Duration::ZERO)
-        .map_err(|_| AudioError::SeekFailed)?;
-
+    // Never try_seek() here. If the source ends between rodio's sound-count
+    // check and the seek feedback, the engine thread blocks forever. Stop the
+    // source and rebuild it lazily when playback resumes.
+    state.player.stop();
     state.player.pause();
 
+    state.track.finished = true;
     state.track.is_playing = false;
     state.track.started_at = None;
     state.track.position = Duration::ZERO;
@@ -503,20 +541,11 @@ fn mark_finished(state: &mut AudioState) -> Result<(), AudioError> {
 }
 
 fn repeat_from_beginning(state: &mut AudioState) -> Result<(), AudioError> {
-    if state.player.empty() {
-        // Нельзя выполнять try_seek() на уже закончившемся Player.
-        // Пересоздаём pipeline с начала файла.
-        reload_track_with_effects_at(state, Duration::ZERO)?;
-    } else {
-        state.player.pause();
-
-        state
-            .player
-            .try_seek(Duration::ZERO)
-            .map_err(|_| AudioError::SeekFailed)?;
-    }
+    // Rebuild instead of seeking a source that may be at EOF.
+    reload_track_with_effects_at(state, Duration::ZERO)?;
 
     state.track.position = Duration::ZERO;
+    state.track.finished = false;
     state.track.is_playing = true;
     state.track.started_at = Some(Instant::now());
     state.track.session_listened_time = Duration::ZERO;

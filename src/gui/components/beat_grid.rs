@@ -1,31 +1,47 @@
 use crate::gui::layout::PlaybackUIState;
 use crate::gui::theme::{Theme, use_theme};
+use crate::shared::event_types::BeatGridData;
 use dioxus::prelude::*;
+
+fn is_valid_tempo(tempo: f32) -> bool {
+    tempo.is_finite() && tempo > 0.0
+}
+
+/// Manual tempo wins; otherwise the rounded BPM shown in the UI is used.
+pub(crate) fn resolved_grid_tempo(bpm: f32, manual_tempo: Option<f32>) -> Option<f32> {
+    manual_tempo
+        .filter(|tempo| is_valid_tempo(*tempo))
+        .or_else(|| is_valid_tempo(bpm).then_some(bpm))
+}
+
+/// Shift that keeps `anchor` on a beat line for the given tempo.
+pub(crate) fn grid_shift_for_anchor(grid: &BeatGridData, tempo: f32, anchor: Option<f32>) -> f32 {
+    let Some(anchor) = anchor.filter(|anchor| anchor.is_finite()) else {
+        return 0.0;
+    };
+
+    let beat_duration = 60.0 / tempo;
+    let base_phase = grid.beats.first().copied().unwrap_or(grid.offset);
+    let nearest = base_phase + ((anchor - base_phase) / beat_duration).round() * beat_duration;
+
+    anchor - nearest
+}
 
 const BEAT_GRID_JS: &str = r#"
     let data = await dioxus.recv();
         window.beatGrid = {
         bpm: data.bpm,
+        tempo: Number(data.tempo) || Number(data.bpm) || 0,
         duration: data.duration,
         snap: data.snap,
         offset: Number(data.offset) || 0,
+        shift: Number(data.shift) || 0,
         beats: data.beats || [],
         bars: data.bars || [],
         theme: data.theme || "light",
     };
 
     const MINP = 20;   // минимальный отступ между линиями в px
-
-    // Общий расчёт шага сетки (используется и для отрисовки, и для магнита).
-    // Делители такта: от 1/16 бита до 8 тактов.
-    function gridStep(pps) {
-        let mults = [1/64, 1/32, 1/16, 1/8, 1/4, 1/2, 1, 2, 4, 8]; // в долях такта
-        let bar = 240 / window.beatGrid.bpm;
-        for (let m of mults) {
-            if (bar * m * pps >= MINP) return bar * m;
-        }
-        return bar * 8; // крайний случай — очень широкий трек
-    }
 
     function firstGridLineAtOrAfter(time, step) {
         const offset =
@@ -52,33 +68,30 @@ const BEAT_GRID_JS: &str = r#"
         ctx.clearRect(0, 0, width, height);
 
         let bg = window.beatGrid;
-        if (!bg || !bg.bpm || bg.bpm <= 0 || !bg.duration || bg.duration <= 0) return;
+        if (!bg || !bg.tempo || bg.tempo <= 0 || !bg.duration || bg.duration <= 0) return;
 
         let visible = bg.duration / (window.waveZoom || 1.0);
         let startTime = (window.waveScroll || 0.0) * (bg.duration - visible);
         let endTime = startTime + visible;
         let pps = width / visible;
 
-        const beats = Array.isArray(bg.beats)
-            ? bg.beats
-            : [];
-
-        const bars = Array.isArray(bg.bars)
-            ? bg.bars
-            : [];
-
             const beatDuration =
-                60.0 / bg.bpm;
+                60.0 / bg.tempo;
 
-            const beatPhase =
-                Number.isFinite(Number(bg.beats?.[0]))
+            // Detected beat times can be sparse, so the grid stays uniform
+            // and only takes its phase from the analysis.
+            const baseBeatPhase =
+                Array.isArray(bg.beats) && Number.isFinite(Number(bg.beats[0]))
                     ? Number(bg.beats[0])
                     : Number(bg.offset) || 0;
 
-            const barPhase =
-                Number.isFinite(Number(bg.bars?.[0]))
+            const baseBarPhase =
+                Array.isArray(bg.bars) && Number.isFinite(Number(bg.bars[0]))
                     ? Number(bg.bars[0])
-                    : beatPhase;
+                    : baseBeatPhase;
+
+            const beatPhase = baseBeatPhase + bg.shift;
+            const barPhase = baseBarPhase + bg.shift;
 
             const barDuration =
                 beatDuration * 4.0;
@@ -152,8 +165,8 @@ const BEAT_GRID_JS: &str = r#"
         if (
             !grid ||
             !grid.snap ||
-            !grid.bpm ||
-            grid.bpm <= 0 ||
+            !grid.tempo ||
+            grid.tempo <= 0 ||
             !grid.duration ||
             grid.duration <= 0
         ) {
@@ -164,12 +177,12 @@ const BEAT_GRID_JS: &str = r#"
         }
 
         const beatDuration =
-            60.0 / grid.bpm;
+            60.0 / grid.tempo;
 
         const beatPhase =
-            Number.isFinite(Number(grid.beats?.[0]))
+            (Array.isArray(grid.beats) && Number.isFinite(Number(grid.beats[0]))
                 ? Number(grid.beats[0])
-                : Number(grid.offset) || 0;
+                : Number(grid.offset) || 0) + (Number(grid.shift) || 0);
 
         const beatIndex =
             Math.round(
@@ -198,6 +211,8 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
         // Поля PlaybackUIState — это Signal<T>, а не методы.
         let bpm_signal = playback.bpm;
         let grid_signal = playback.beat_grid;
+        let grid_anchor_signal = playback.grid_anchor;
+        let grid_tempo_signal = playback.grid_tempo;
 
         // Вызов сигнала читает значение и создаёт реактивную зависимость.
         let bpm = bpm_signal();
@@ -205,6 +220,12 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
         let snap = snap_enabled();
         let grid = grid_signal();
         let offset = grid.as_ref().map(|grid| grid.offset).unwrap_or(0.0);
+        let manual_tempo = grid_tempo_signal();
+        let tempo = resolved_grid_tempo(bpm, manual_tempo).unwrap_or(bpm);
+        let shift = grid
+            .as_ref()
+            .map(|grid| grid_shift_for_anchor(grid, tempo, grid_anchor_signal()))
+            .unwrap_or(0.0);
 
         let is_dark = theme.get() == Theme::Dark;
 
@@ -213,9 +234,11 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
 
             let _ = eval.send(serde_json::json!({
                 "bpm": bpm,
+                "tempo": tempo,
                 "duration": duration,
                 "snap": snap,
                 "offset": offset,
+                "shift": shift,
                 "beats": grid.as_ref().map(|grid| &grid.beats),
                 "bars": grid.as_ref().map(|grid| &grid.bars),
                 "theme": if is_dark { "dark" } else { "light" },
@@ -229,5 +252,60 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
             class: "absolute inset-0 w-full h-full pointer-events-none",
             style: "display: block; width: 100%; height: 100%;",
         }
+    }
+}
+
+#[cfg(test)]
+mod grid_sync_tests {
+    use super::{grid_shift_for_anchor, resolved_grid_tempo};
+    use crate::shared::event_types::BeatGridData;
+
+    fn grid() -> BeatGridData {
+        BeatGridData {
+            offset: 0.137,
+            beats: vec![0.137, 5.137],
+            bars: vec![0.137],
+            downbeats: vec![0.137],
+        }
+    }
+
+    #[test]
+    fn shift_should_put_anchor_on_nearest_beat() {
+        let shift = grid_shift_for_anchor(&grid(), 120.0, Some(1.3));
+
+        assert!((shift - 0.163).abs() < 1e-4);
+    }
+
+    #[test]
+    fn shift_should_be_zero_without_anchor() {
+        assert_eq!(grid_shift_for_anchor(&grid(), 120.0, None), 0.0);
+    }
+
+    #[test]
+    fn shift_should_keep_anchor_on_beat_after_tempo_change() {
+        let anchor = 8.0;
+
+        for tempo in [120.0, 127.4, 90.0] {
+            let shift = grid_shift_for_anchor(&grid(), tempo, Some(anchor));
+            let beat_duration = 60.0 / tempo;
+            let phase = 0.137 + shift;
+            let line = phase + ((anchor - phase) / beat_duration).round() * beat_duration;
+
+            assert!((line - anchor).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn resolved_tempo_should_prefer_manual_value() {
+        let tempo = resolved_grid_tempo(127.0, Some(120.0));
+
+        assert_eq!(tempo, Some(120.0));
+    }
+
+    #[test]
+    fn resolved_tempo_should_ignore_invalid_manual_value() {
+        let tempo = resolved_grid_tempo(127.0, Some(0.0));
+
+        assert_eq!(tempo, Some(127.0));
     }
 }

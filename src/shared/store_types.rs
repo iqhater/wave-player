@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Единый трек в библиотеке.
@@ -86,12 +87,16 @@ impl Default for ThemePreference {
 
 // ===== Аудио =====
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AudioConfig {
     /// Playback
     pub volume: f32,
     pub speed: f32,
     pub preserve_pitch: bool,
     pub repeat_track: bool,
+
+    /// Gain
+    pub preamp_db: f32,
 
     /// Filters
     pub low_pass: Option<f32>,
@@ -112,6 +117,8 @@ impl Default for AudioConfig {
             preserve_pitch: false,
             repeat_track: false,
 
+            preamp_db: 3.5,
+
             // Filters
             low_pass: None,
             high_pass: None,
@@ -126,6 +133,7 @@ impl Default for AudioConfig {
 
 // ===== Поведение интерфейса =====
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UiConfig {
     pub timeline_cursor_follows_loop: bool,
     pub show_time_markers: bool,
@@ -133,6 +141,8 @@ pub struct UiConfig {
     pub timeline_progress_view: bool,
     pub show_beat_grid: bool,
     pub beat_grid_snap: bool,
+    /// Per-track manual BPM and grid anchor overrides, keyed by track path.
+    pub manual_grids: HashMap<String, ManualGrid>,
 }
 
 impl Default for UiConfig {
@@ -144,13 +154,21 @@ impl Default for UiConfig {
             timeline_progress_view: false,
             show_beat_grid: true,
             beat_grid_snap: true,
+            manual_grids: HashMap::new(),
         }
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ManualGrid {
+    pub tempo: Option<f32>,
+    pub anchor: Option<f32>,
+}
+
 #[cfg(test)]
 mod config_tests {
-    use super::{AppConfig, WindowConfig};
+    use super::{AppConfig, ManualGrid, WindowConfig};
 
     #[test]
     fn config_should_roundtrip_all_settings() {
@@ -167,6 +185,7 @@ mod config_tests {
         config.audio.speed = 1.25;
         config.audio.preserve_pitch = true;
         config.audio.repeat_track = true;
+        config.audio.preamp_db = 5.0;
         config.audio.low_pass = Some(12_000.0);
         config.audio.high_pass = Some(40.0);
         config.audio.mid_side = 2;
@@ -178,10 +197,65 @@ mod config_tests {
         config.ui.timeline_progress_view = true;
         config.ui.show_beat_grid = false;
         config.ui.beat_grid_snap = true;
+        config.ui.manual_grids.insert(
+            "music/track.wav".to_string(),
+            super::ManualGrid {
+                tempo: Some(128.0),
+                anchor: Some(12.5),
+            },
+        );
 
         let json = serde_json::to_string(&config).unwrap();
         let restored: AppConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(restored, config);
+    }
+
+    #[test]
+    fn config_should_use_defaults_for_missing_gain_and_grid_fields() {
+        let config: AppConfig = serde_json::from_str("{}").unwrap();
+
+        assert_eq!(config.audio.preamp_db, 3.5);
+        assert!(config.ui.manual_grids.is_empty());
+    }
+
+    #[test]
+    fn legacy_config_without_gain_and_grid_fields_should_still_load() {
+        let json = r#"
+        {
+          "window": {"width": 1320, "height": 1002, "x": null, "y": null, "maximized": false},
+          "theme": "Dark",
+          "audio": {
+            "volume": 0.5, "speed": 1.25, "preserve_pitch": true, "repeat_track": false,
+            "low_pass": null, "high_pass": null,
+            "mid_side": 0, "stereo_width": 1.0, "pan": 0.0
+          },
+          "ui": {
+            "timeline_cursor_follows_loop": false, "show_time_markers": true,
+            "loop_repeat_region": true, "timeline_progress_view": false,
+            "show_beat_grid": true, "beat_grid_snap": false
+          }
+        }
+        "#;
+
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.audio.volume, 0.5);
+        assert_eq!(config.audio.speed, 1.25);
+        assert_eq!(config.audio.preamp_db, 3.5);
+        assert!(config.ui.manual_grids.is_empty());
+    }
+
+    #[test]
+    fn manual_grid_should_roundtrip_tempo_and_anchor() {
+        let grid = ManualGrid {
+            tempo: Some(127.5),
+            anchor: Some(12.25),
+        };
+
+        let json = serde_json::to_string(&grid).unwrap();
+        let restored: ManualGrid = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored, grid);
     }
 }

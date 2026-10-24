@@ -70,6 +70,10 @@ pub struct PlaybackUIState {
     pub(crate) key_name: Signal<String>,
     pub(crate) key_numerical: Signal<String>,
     pub(crate) beat_grid: Signal<Option<BeatGridData>>,
+    /// Time that must stay on a beat line after manual grid sync.
+    pub(crate) grid_anchor: Signal<Option<f32>>,
+    /// Manual grid tempo override; `None` means the analysis tempo is used.
+    pub(crate) grid_tempo: Signal<Option<f32>>,
 }
 
 #[derive(Clone, Copy)]
@@ -190,6 +194,8 @@ pub fn RootLayout() -> Element {
     let key_name = use_signal(|| "—".to_string());
     let key_numerical = use_signal(|| String::new());
     let beat_grid = use_signal(|| None::<BeatGridData>);
+    let grid_anchor = use_signal(|| None::<f32>);
+    let grid_tempo = use_signal(|| None::<f32>);
 
     let loop_start = use_signal(|| 0.0_f32);
     let loop_end = use_signal(|| 0.0_f32);
@@ -211,6 +217,8 @@ pub fn RootLayout() -> Element {
         key_name,
         key_numerical,
         beat_grid,
+        grid_anchor,
+        grid_tempo,
     });
 
     use_context_provider(|| LoopUIState {
@@ -231,6 +239,10 @@ pub fn RootLayout() -> Element {
             .command_tx
             .read()
             .send(PlayerCommand::SetSpeed(config.audio.speed));
+        let _ = ctx
+            .command_tx
+            .read()
+            .send(PlayerCommand::SetPreamp(config.audio.preamp_db));
         let _ = ctx
             .command_tx
             .read()
@@ -324,6 +336,8 @@ pub fn RootLayout() -> Element {
         let mut key_name = key_name;
         let mut key_numerical = key_numerical;
         let mut beat_grid = beat_grid;
+        let mut grid_anchor = grid_anchor;
+        let mut grid_tempo = grid_tempo;
 
         async move {
             while let Some(event) = status_rx.next().await {
@@ -332,6 +346,14 @@ pub fn RootLayout() -> Element {
                         duration,
                         metadata: track_metadata,
                     } => {
+                        let saved_grid = ctx
+                            .config
+                            .read()
+                            .ui
+                            .manual_grids
+                            .get(&track_metadata.track_path)
+                            .cloned();
+
                         position_secs.set(0.0);
                         duration_secs.set(duration.as_secs_f32());
                         has_track.set(true);
@@ -343,6 +365,8 @@ pub fn RootLayout() -> Element {
                         key_name.set("—".to_string());
                         key_numerical.set(String::new());
                         beat_grid.set(None);
+                        grid_anchor.set(saved_grid.as_ref().and_then(|grid| grid.anchor));
+                        grid_tempo.set(saved_grid.as_ref().and_then(|grid| grid.tempo));
                     }
 
                     PlayerEvent::Paused => {
@@ -376,6 +400,13 @@ pub fn RootLayout() -> Element {
                                 }
                             }
                         });
+                    }
+
+                    PlayerEvent::AnalysisCleared => {
+                        bpm.set(0.0);
+                        key_name.set("—".to_string());
+                        key_numerical.set(String::new());
+                        beat_grid.set(None);
                     }
 
                     PlayerEvent::BpmKeyDetected {
@@ -444,11 +475,10 @@ pub fn RootLayout() -> Element {
                         div { class: "flex min-h-0 w-full flex-1 flex-col items-center
                                      overflow-y-auto
                                      px-4 pb-52 pt-24
-                                     lg:justify-center
                                      lg:p-container-padding
                                      lg:pb-40",
                            div { class: "{content_width_class}
-                                         flex w-full flex-col items-center gap-6
+                                         my-auto flex w-full flex-col items-center gap-6
                                          lg:gap-8",
                                // Router paste here: Home, Recents, Favorites or Settings
                                Outlet::<Route> {}

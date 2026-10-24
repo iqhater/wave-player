@@ -30,6 +30,7 @@ pub struct WaveformBin {
 } */
 
 // 2. Среднечастотный канал (Глобальный статус)
+#[allow(dead_code)] // Shared event contract; some payload fields are reserved for the UI.
 #[derive(Clone, Debug)]
 pub enum PlayerEvent {
     Started {
@@ -95,6 +96,9 @@ pub enum PlayerEvent {
         points: Vec<WaveformEnvelope>,
     },
 
+    /// Cached analysis was removed.
+    AnalysisCleared,
+
     // BPM & Key detection result
     BpmKeyDetected {
         bpm: f32,
@@ -126,6 +130,7 @@ pub type StatusSender = BroadcastSender<PlayerEvent>;
 // pub type StatusReceiver = BroadcastReceiver<PlayerEvent>;
 
 // 3. Низкочастотный канал (Редкие ошибки)
+#[allow(dead_code)] // Error categories are part of the shared backend contract.
 #[derive(Clone, Debug)]
 pub enum AudioError {
     // 📁 Проблемы с файловой системой
@@ -146,6 +151,7 @@ pub type ErrorSender = BroadcastSender<AudioError>;
 // pub type ErrorReceiver = BroadcastReceiver<AudioError>;
 
 // ——— Снапшоты от Store ———
+#[allow(dead_code)] // Shared store contract; some payload fields are reserved for the UI.
 #[derive(Clone, Debug)]
 pub enum StoreEvent {
     ConfigLoaded {

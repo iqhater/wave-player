@@ -54,6 +54,7 @@ pub struct PlayerContext {
     pub config: GenerationalBox<AppConfig, SyncStorage>,
 
     // Нужен для синхронной записи config.json при закрытии окна.
+    #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
     config_store: GenerationalBox<ConfigStore, SyncStorage>,
 }
 
@@ -71,6 +72,7 @@ impl PlayerContext {
             .try_send(StoreCommand::SetConfig(config));
     }
 
+    #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
     pub(crate) fn save_config_now(&self) {
         let config = self.config.read().clone();
         self.config_store.read().save(&config);
@@ -155,6 +157,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let owner = SyncStorage::owner();
 
     // Собираем контекст для UI Dioxus
+    #[cfg_attr(
+        not(any(feature = "desktop", feature = "mobile")),
+        allow(unused_variables)
+    )]
     let player_ctx = PlayerContext {
         // main channels
         command_tx: owner.insert(cmd_tx),

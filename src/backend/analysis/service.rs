@@ -9,7 +9,7 @@ use ebur128::{EbuR128, Mode};
 use rodio::Source;
 use serde::{Deserialize, Serialize};
 
-use super::bpm_key::{BpmKeyResult, analyze_bpm_key};
+use super::bpm_key::{BPM_KEY_VERSION, BpmKeyResult, analyze_bpm_key};
 use crate::backend::decoder::open_file_with_decoder;
 use crate::backend::waveform_cache::{self, SourceStamp};
 use crate::shared::command_types::CachedTrackAnalysis;
@@ -19,6 +19,7 @@ use crate::shared::event_types::{PlayerEvent, StatusSender, WaveformEnvelope};
 #[cfg(test)]
 use crate::backend::waveform_cache::CACHE_VERSION;
 
+pub(crate) const ANALYSIS_DIR: &str = "analysis";
 const OVERVIEW_BINS: usize = 500;
 const MAX_DETAIL_POINTS: usize = 16_384;
 const CHECK_INTERVAL: usize = 4096;
@@ -99,6 +100,7 @@ struct TrackJob {
     path: PathBuf,
     duration: Duration,
     token: Token,
+    force: bool,
 }
 
 struct DetailJob {
@@ -185,6 +187,19 @@ impl AnalysisService {
             path,
             duration,
             token: self.track_token(),
+            force: false,
+        });
+    }
+
+    /// Discards cached results and re-runs the full analysis pipeline.
+    pub(crate) fn restart(&mut self, path: PathBuf, duration: Duration) {
+        self.cancel();
+
+        self.tracks.submit(TrackJob {
+            path,
+            duration,
+            token: self.track_token(),
+            force: true,
         });
     }
 
@@ -213,6 +228,7 @@ impl AnalysisService {
         });
     }
 
+    /// Publishes pending analysis events to the UI.
     pub(crate) fn publish(&mut self, status_tx: &StatusSender) {
         while let Ok(output) = self.output_rx.try_recv() {
             if output.token.cancelled() {
@@ -281,6 +297,8 @@ struct CachedAnalysis {
     waveform_cache_path: Option<PathBuf>,
 
     bpm_key: Option<BpmKeyResult>,
+    #[serde(default)]
+    bpm_key_version: u32,
     loudness: Option<LoudnessResult>,
 }
 
@@ -291,6 +309,7 @@ impl CachedAnalysis {
             waveform: None,
             waveform_cache_path: None,
             bpm_key: None,
+            bpm_key_version: BPM_KEY_VERSION,
             loudness: None,
         }
     }
@@ -344,7 +363,7 @@ fn persist(
     let temporary = file.with_extension(format!("{}.tmp", std::process::id()));
 
     let write_result = (|| -> std::io::Result<()> {
-        fs::create_dir_all(cache_dir.join("analysis"))?;
+        fs::create_dir_all(cache_dir.join(ANALYSIS_DIR))?;
         fs::write(&temporary, &bytes)?;
         fs::rename(&temporary, &file)
     })();
@@ -458,9 +477,17 @@ fn load_cache(
 }
 
 fn parse_cache(bytes: &[u8], source: &SourceStamp) -> Option<CachedAnalysis> {
-    serde_json::from_slice::<CachedAnalysis>(bytes)
+    let mut cache = serde_json::from_slice::<CachedAnalysis>(bytes)
         .ok()
-        .filter(|cache| &cache.source == source)
+        .filter(|cache| &cache.source == source)?;
+
+    // Reanalyze grids made on a trimmed timeline without discarding other stages.
+    if cache.bpm_key_version != BPM_KEY_VERSION {
+        cache.bpm_key = None;
+        cache.bpm_key_version = BPM_KEY_VERSION;
+    }
+
+    Some(cache)
 }
 
 fn cache_path(cache_dir: &Path, path: &Path) -> PathBuf {
@@ -471,7 +498,9 @@ fn cache_path(cache_dir: &Path, path: &Path) -> PathBuf {
         hash = hash.wrapping_mul(0x100000001b3);
     }
 
-    cache_dir.join("analysis").join(format!("{hash:016x}.json"))
+    cache_dir
+        .join(ANALYSIS_DIR)
+        .join(format!("{hash:016x}.json"))
 }
 
 fn request_stored_analysis(
@@ -544,7 +573,11 @@ fn analyze_track(
     store_tx: &flume::Sender<StoreCommand>,
     output_tx: &flume::Sender<Output>,
 ) -> AnalysisResult<()> {
-    let mut cache = load_cache(job, cache_dir, store_tx)?;
+    let mut cache = if job.force {
+        CachedAnalysis::empty(SourceStamp::read(&job.path).map_err(failed)?)
+    } else {
+        load_cache(job, cache_dir, store_tx)?
+    };
 
     if let Some(peaks) = &cache.waveform {
         emit(output_tx, &job.token, overview_event(peaks))?;
@@ -915,6 +948,7 @@ mod tests {
             waveform: None,
             waveform_cache_path: None,
             bpm_key: None,
+            bpm_key_version: BPM_KEY_VERSION,
             loudness: Some(LoudnessResult {
                 integrated_lufs: None,
             }),
@@ -945,6 +979,52 @@ mod tests {
         };
 
         assert!(parse_cache(&bytes, &changed).is_none());
+    }
+
+    #[test]
+    fn old_beat_grid_should_be_reanalyzed_without_discarding_loudness() {
+        let source = SourceStamp {
+            version: CACHE_VERSION,
+            path: PathBuf::from("track.wav"),
+            length: 100,
+            modified_secs: 1,
+            modified_nanos: 0,
+        };
+        let mut value = serde_json::to_value(CachedAnalysis::empty(source.clone())).unwrap();
+        value.as_object_mut().unwrap().remove("bpm_key_version");
+        value["bpm_key"] = serde_json::json!({
+            "bpm": 120.0,
+            "beat_grid": { "offset": 0.0, "beats": [0.0], "bars": [], "downbeats": [] },
+            "key_name": "C major",
+            "key_numerical": "8B",
+        });
+        value["loudness"] = serde_json::json!({ "integrated_lufs": -14.0 });
+        let bytes = serde_json::to_vec(&value).unwrap();
+        let cache = parse_cache(&bytes, &source).unwrap();
+
+        assert!(cache.bpm_key.is_none() && cache.loudness.is_some());
+    }
+
+    #[test]
+    fn current_beat_grid_should_survive_cache_loading() {
+        let source = SourceStamp {
+            version: CACHE_VERSION,
+            path: PathBuf::from("track.wav"),
+            length: 100,
+            modified_secs: 1,
+            modified_nanos: 0,
+        };
+        let mut value = serde_json::to_value(CachedAnalysis::empty(source.clone())).unwrap();
+        value["bpm_key"] = serde_json::json!({
+            "bpm": 120.0,
+            "beat_grid": { "offset": 0.137, "beats": [0.137], "bars": [], "downbeats": [] },
+            "key_name": "C major",
+            "key_numerical": "8B",
+        });
+        let bytes = serde_json::to_vec(&value).unwrap();
+        let cache = parse_cache(&bytes, &source).unwrap();
+
+        assert!(cache.bpm_key.is_some());
     }
 
     #[test]

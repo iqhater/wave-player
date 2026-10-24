@@ -1,6 +1,7 @@
 /*
 - LoadFile
 */
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -8,9 +9,11 @@ use std::time::{Duration, Instant};
 use rodio::Source;
 
 use super::playback;
+use crate::backend::analysis::service::ANALYSIS_DIR;
 use crate::backend::cover_cache;
 use crate::backend::decoder::{build_audio_pipeline, open_file_with_decoder};
 use crate::backend::metadata::parse_track_metadata_with_cover;
+use crate::backend::waveform_cache;
 
 use crate::backend::state::AudioState;
 use crate::shared::command_types::StoreCommand;
@@ -31,6 +34,7 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
 
     state.track.is_loaded = false;
     state.track.is_playing = false;
+    state.track.finished = false;
     state.track.position = Duration::ZERO;
     state.track.started_at = None;
     state.track.session_listened_time = Duration::ZERO;
@@ -100,6 +104,37 @@ pub(crate) fn request_waveform_detail(
     state
         .analysis
         .request_detail(path, state.track.duration, request_id, start, end, points);
+
+    Ok(())
+}
+
+/// Re-runs the full analysis pipeline for the current track, ignoring caches.
+pub(crate) fn reanalyze_current(state: &mut AudioState) -> Result<(), AudioError> {
+    let Some(path) = state.track.path.clone() else {
+        return Ok(());
+    };
+
+    state.analysis.restart(path, state.track.duration);
+
+    Ok(())
+}
+
+/// Removes all cached analysis and forces the next analyses to start fresh.
+pub(crate) fn clear_analysis_cache(state: &mut AudioState) -> Result<(), AudioError> {
+    state.analysis.cancel();
+
+    for directory in [ANALYSIS_DIR, waveform_cache::WAVEFORM_DIR] {
+        let path = state.cover_cache_dir.join(directory);
+
+        if let Err(error) = fs::remove_dir_all(&path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("failed to remove cache {}: {error}", path.display());
+            }
+        }
+    }
+
+    let _ = state.store_cmd_tx.send(StoreCommand::ClearAnalysisCache);
+    let _ = state.status_tx.try_broadcast(PlayerEvent::AnalysisCleared);
 
     Ok(())
 }

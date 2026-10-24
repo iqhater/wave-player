@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) const CACHE_VERSION: u32 = 2;
 
 const MAGIC: &[u8; 8] = b"WPWFM001";
-const WAVEFORM_DIR: &str = "wavefroms";
+pub(crate) const WAVEFORM_DIR: &str = "wavefroms";
 const MAX_HEADER_BYTES: usize = 128 * 1024;
 const MAX_POINTS: usize = 1_000_000;
 

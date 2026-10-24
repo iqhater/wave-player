@@ -5,7 +5,7 @@ use super::waveform_bins_canvas::WaveformBinsCanvas;
 use dioxus::html::HasFileData;
 use std::path::PathBuf;
 
-use super::beat_grid::BeatGrid;
+use super::beat_grid::{BeatGrid, grid_shift_for_anchor, resolved_grid_tempo};
 use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::{BeatGridData, PlayerEvent};
@@ -287,12 +287,25 @@ pub fn Waveform() -> Element {
                         let secs = if show_grid() && grid_snap() {
                             let bpm_signal = playback.bpm;
                             let grid_signal = playback.beat_grid;
+                            let anchor_signal = playback.grid_anchor;
+                            let manual_tempo_signal = playback.grid_tempo;
 
                             let bpm = bpm_signal();
                             let grid = grid_signal();
+                            let anchor = anchor_signal();
+                            let manual_tempo = manual_tempo_signal();
 
                             grid.as_ref().map_or(raw_secs, |grid| {
-                                snap_to_grid(grid, bpm, raw_secs, width, zoom, duration)
+                                snap_to_grid(
+                                    grid,
+                                    bpm,
+                                    manual_tempo,
+                                    anchor,
+                                    raw_secs,
+                                    width,
+                                    zoom,
+                                    duration,
+                                )
                             })
                         } else {
                             raw_secs
@@ -443,20 +456,27 @@ const GRID_MIN_SPACING_PX: f32 = 30.0;
 fn grid_snap_interval(
     grid: &BeatGridData,
     bpm: f32,
+    manual_tempo: Option<f32>,
+    anchor: Option<f32>,
     width: f32,
     zoom: f32,
     duration: f32,
 ) -> Option<(f32, f32)> {
-    if bpm <= 0.0 || width <= 0.0 || duration <= 0.0 {
+    let tempo = resolved_grid_tempo(bpm, manual_tempo)?;
+
+    if width <= 0.0 || duration <= 0.0 {
         return None;
     }
 
     let visible_duration = duration / zoom.max(1.0);
     let pixels_per_second = width / visible_duration.max(0.001);
 
-    let beat_duration = 60.0 / bpm;
-    let beat_phase = grid.beats.first().copied().unwrap_or(grid.offset);
-    let bar_phase = grid.bars.first().copied().unwrap_or(beat_phase);
+    let beat_duration = 60.0 / tempo;
+    let base_phase = grid.beats.first().copied().unwrap_or(grid.offset);
+    let base_bar_phase = grid.bars.first().copied().unwrap_or(base_phase);
+    let shift = grid_shift_for_anchor(grid, tempo, anchor);
+    let beat_phase = base_phase + shift;
+    let bar_phase = base_bar_phase + shift;
 
     let mut interval = beat_duration;
     let mut phase = beat_phase;
@@ -478,12 +498,16 @@ fn grid_snap_interval(
 fn snap_to_grid(
     grid: &BeatGridData,
     bpm: f32,
+    manual_tempo: Option<f32>,
+    anchor: Option<f32>,
     seconds: f32,
     width: f32,
     zoom: f32,
     duration: f32,
 ) -> f32 {
-    let Some((interval, phase)) = grid_snap_interval(grid, bpm, width, zoom, duration) else {
+    let Some((interval, phase)) =
+        grid_snap_interval(grid, bpm, manual_tempo, anchor, width, zoom, duration)
+    else {
         return seconds;
     };
 
@@ -509,14 +533,79 @@ mod grid_snap_tests {
 
     #[test]
     fn snap_should_use_beats_when_they_are_visible() {
-        let snapped = snap_to_grid(&grid(), 120.0, 1.24, 1000.0, 10.0, 10.0);
+        let snapped = snap_to_grid(&grid(), 120.0, None, None, 1.24, 1000.0, 10.0, 10.0);
         assert!((snapped - 1.0).abs() < 1e-4);
     }
 
     #[test]
     fn snap_should_follow_visible_grid_lines_when_zoomed_out() {
-        // 120 s, 600 px, zoom 1 → 5 px/s. Шаг сетки доходит до 8 s.
-        let snapped = snap_to_grid(&grid(), 120.0, 58.0, 600.0, 1.0, 120.0);
+        // At 5 px/s, only every fourth bar is visible.
+        let snapped = snap_to_grid(&grid(), 120.0, None, None, 58.0, 600.0, 1.0, 120.0);
         assert!((snapped - 56.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn snap_should_use_rounded_bpm() {
+        let mut grid = grid();
+        grid.offset = 0.137;
+        grid.beats[0] = 0.137;
+
+        let snapped = snap_to_grid(&grid, 120.0, None, None, 1.2, 1000.0, 20.0, 120.0);
+
+        assert!((snapped - 1.137).abs() < 1e-4);
+    }
+
+    #[test]
+    fn snap_should_stay_uniform_when_detected_beats_have_gaps() {
+        let mut grid = grid();
+        grid.offset = 0.137;
+        grid.beats = vec![0.137, 0.637, 1.137, 5.137, 5.637];
+
+        let snapped = snap_to_grid(&grid, 120.0, None, None, 3.1, 1000.0, 20.0, 120.0);
+
+        assert!((snapped - 3.137).abs() < 1e-4);
+    }
+
+    #[test]
+    fn snap_should_clamp_to_track_bounds() {
+        let snapped = snap_to_grid(&grid(), 120.0, None, None, 119.9, 1000.0, 20.0, 120.0);
+        assert!((snapped - 120.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn snap_should_keep_anchor_on_beat_line() {
+        let snapped = snap_to_grid(&grid(), 120.0, None, Some(1.25), 1.24, 1000.0, 10.0, 10.0);
+        assert!((snapped - 1.25).abs() < 1e-4);
+    }
+
+    #[test]
+    fn snap_should_prefer_manual_tempo_over_rounded_bpm() {
+        let mut grid = grid();
+        grid.offset = 0.137;
+        grid.beats[0] = 0.137;
+
+        let snapped = snap_to_grid(&grid, 127.0, Some(120.0), None, 43.2, 1000.0, 20.0, 120.0);
+
+        assert!((snapped - 43.137).abs() < 1e-4);
+    }
+
+    #[test]
+    fn snap_should_keep_anchor_after_manual_tempo_change() {
+        let mut grid = grid();
+        grid.beats[0] = 0.137;
+        grid.offset = 0.137;
+
+        let snapped = snap_to_grid(
+            &grid,
+            127.0,
+            Some(120.0),
+            Some(8.0),
+            8.1,
+            1000.0,
+            20.0,
+            120.0,
+        );
+
+        assert!((snapped - 8.0).abs() < 1e-4);
     }
 }

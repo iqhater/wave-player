@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use stratum_dsp::{AnalysisConfig, analyze_audio};
 
+pub(super) const BPM_KEY_VERSION: u32 = 2;
+
 /// Result of BPM and key analysis
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BpmKeyResult {
@@ -35,8 +37,14 @@ pub fn analyze_bpm_key(
         )
     };
 
-    let result = analyze_audio(&mono, sample_rate, AnalysisConfig::default())
-        .map_err(|_| AudioError::FileCorrupted)?;
+    // stratum-dsp does not restore the trimmed prefix in beat timestamps.
+    // Keep analysis on the same timeline as playback and waveform samples.
+    let config = AnalysisConfig {
+        enable_silence_trimming: false,
+        ..AnalysisConfig::default()
+    };
+    let result =
+        analyze_audio(&mono, sample_rate, config).map_err(|_| AudioError::FileCorrupted)?;
 
     if !result.bpm.is_finite() {
         return Err(AudioError::FileCorrupted);
@@ -45,6 +53,7 @@ pub fn analyze_bpm_key(
     let offset = result.beat_grid.downbeats.first().copied().unwrap_or(0.0);
 
     Ok(BpmKeyResult {
+        // The grid uses this rounded value, matching what the UI displays.
         bpm: result.bpm.round(),
         key_name: result.key.name(),
         key_numerical: result.key.numerical(),

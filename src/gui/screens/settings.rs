@@ -1,10 +1,30 @@
 use super::super::layout::{
-    BeatGridSnap, LoopRepeatRegion, ShowBeatGrid, ShowTimeMarkers, TimelineCursorFollowsLoop,
-    TimelineView,
+    BeatGridSnap, LoopRepeatRegion, PlaybackUIState, ShowBeatGrid, ShowTimeMarkers,
+    TimelineCursorFollowsLoop, TimelineView,
 };
 use crate::PlayerContext;
-use crate::shared::command_types::StoreCommand;
+use crate::shared::command_types::{PlayerCommand, StoreCommand};
 use dioxus::prelude::*;
+
+const MIN_PREAMP_DB: f32 = -24.0;
+const MAX_PREAMP_DB: f32 = 24.0;
+const PREAMP_STEP_DB: f32 = 0.5;
+
+fn adjust_preamp(ctx: PlayerContext, mut preamp_db: Signal<f32>, delta: f32) {
+    let value = (preamp_db() + delta).clamp(MIN_PREAMP_DB, MAX_PREAMP_DB);
+
+    if (value - preamp_db()).abs() < f32::EPSILON {
+        return;
+    }
+
+    preamp_db.set(value);
+
+    let _ = ctx.command_tx.read().send(PlayerCommand::SetPreamp(value));
+
+    ctx.update_config(|config| {
+        config.audio.preamp_db = value;
+    });
+}
 
 #[component]
 pub fn Settings() -> Element {
@@ -21,6 +41,10 @@ pub fn Settings() -> Element {
     let mut is_time_markers_checked = use_context::<ShowTimeMarkers>().0;
     let mut is_loop_enabled = use_context::<LoopRepeatRegion>().0;
     let mut is_standard_timeline_view = use_context::<TimelineView>().0;
+
+    // Audio
+    let has_track = use_context::<PlaybackUIState>().has_track;
+    let preamp_db = use_signal(|| ctx.config.read().audio.preamp_db);
 
     rsx! {
         div {
@@ -57,6 +81,7 @@ pub fn Settings() -> Element {
                         id: "timeline-cursor-behavior",
                         text: "Enable timeline cursor followed by loop movement.",
                         checked: is_cursor_checked,
+                        disabled: true,
                         onchange: move |_| {
                             let enabled = !is_cursor_checked();
                             is_cursor_checked.set(enabled);
@@ -111,6 +136,7 @@ pub fn Settings() -> Element {
                         id: "timeline-progress-view",
                         text: "Use the round cursor progress view.",
                         checked: is_standard_timeline_view,
+                        disabled: true,
                         onchange: move |_| {
                             let enabled = !is_standard_timeline_view();
                             is_standard_timeline_view.set(enabled);
@@ -189,6 +215,158 @@ pub fn Settings() -> Element {
                         .send(StoreCommand::SetConfig(config));
                     }
                 }
+
+                p {
+                    class: "mt-3 text-sm text-secondary",
+                    "Manual BPM and grid anchor are saved per track. Right-click the BPM field to reset them."
+                }
+            }
+
+            // Audio settings
+            div {
+                class: "w-full rounded-2xl bg-surface-container-lowest
+                        p-5 shadow-[0_4px_20px_rgba(107,122,143,0.06)]",
+
+                div {
+                    class: "flex items-center gap-2 mb-4",
+
+                    span {
+                        class: "material-symbols-outlined text-primary",
+                        "tune"
+                    }
+
+                    h2 {
+                        class: "text-lg font-semibold text-primary",
+                        "Audio"
+                    }
+                }
+
+                div {
+                    class: "flex flex-col gap-4",
+
+                    div {
+                        class: "flex items-center justify-between gap-4",
+
+                        span { class: "text-[16px] text-on-surface", "Preamp" }
+
+                        div {
+                            class: "flex items-stretch overflow-hidden rounded-lg
+                                    border border-outline-variant bg-surface-container",
+
+                            span {
+                                class: "flex w-20 items-center justify-center px-2 text-sm
+                                        font-semibold text-primary tabular-nums",
+                                {format!("{:+.1} dB", preamp_db())}
+                            }
+
+                            div {
+                                class: "flex flex-col border-l border-outline-variant",
+
+                                button {
+                                    class: "flex h-5 w-7 cursor-pointer items-center justify-center
+                                            text-secondary transition-colors
+                                            hover:bg-primary/10 hover:text-primary
+                                            active:bg-primary/20",
+                                    r#type: "button",
+                                    title: "Increase preamp",
+                                    onclick: move |_| adjust_preamp(ctx, preamp_db, PREAMP_STEP_DB),
+
+                                    span {
+                                        class: "material-symbols-outlined",
+                                        style: "font-size: 14px; line-height: 1;",
+                                        "keyboard_arrow_up"
+                                    }
+                                }
+
+                                button {
+                                    class: "flex h-5 w-7 cursor-pointer items-center justify-center
+                                            border-t border-outline-variant text-secondary
+                                            transition-colors hover:bg-primary/10
+                                            hover:text-primary active:bg-primary/20",
+                                    r#type: "button",
+                                    title: "Decrease preamp",
+                                    onclick: move |_| adjust_preamp(ctx, preamp_db, -PREAMP_STEP_DB),
+
+                                    span {
+                                        class: "material-symbols-outlined",
+                                        style: "font-size: 14px; line-height: 1;",
+                                        "keyboard_arrow_down"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Analysis utilities
+            div {
+                class: "w-full rounded-2xl bg-surface-container-lowest
+                        p-5 shadow-[0_4px_20px_rgba(107,122,143,0.06)]",
+
+                div {
+                    class: "flex items-center gap-2 mb-4",
+
+                    span {
+                        class: "material-symbols-outlined text-primary",
+                        "analytics"
+                    }
+
+                    h2 {
+                        class: "text-lg font-semibold text-primary",
+                        "Analysis"
+                    }
+                }
+
+                p {
+                    class: "mb-4 text-sm text-secondary",
+                    "Re-run beat detection for the current track or drop the cached analysis and waveforms for every track."
+                }
+
+                div {
+                    class: "flex flex-wrap gap-3",
+
+                    button {
+                        class: "flex cursor-pointer items-center gap-2 rounded-xl bg-primary px-3 py-2
+                                text-sm text-on-primary transition-all hover:brightness-110
+                                active:scale-95 disabled:cursor-not-allowed disabled:opacity-50",
+                        disabled: !has_track(),
+                        title: "Ignore cached results and analyze the current track again",
+                        onclick: move |_| {
+                            let _ = ctx
+                                .command_tx
+                                .read()
+                                .send(PlayerCommand::ReanalyzeCurrent);
+                        },
+
+                        span {
+                            class: "material-symbols-outlined",
+                            style: "font-size: 18px;",
+                            "refresh"
+                        }
+                        span { "Reanalyze track" }
+                    }
+
+                    button {
+                        class: "flex cursor-pointer items-center gap-2 rounded-xl bg-surface-container
+                                px-3 py-2 text-sm text-secondary transition-all
+                                hover:bg-surface-variant hover:text-primary active:scale-95",
+                        title: "Delete cached analysis, BPM and waveform data for all tracks",
+                        onclick: move |_| {
+                            let _ = ctx
+                                .command_tx
+                                .read()
+                                .send(PlayerCommand::ClearAnalysisCache);
+                        },
+
+                        span {
+                            class: "material-symbols-outlined",
+                            style: "font-size: 18px;",
+                            "delete_sweep"
+                        }
+                        span { "Clear analysis cache" }
+                    }
+                }
             }
 
             // Shortcuts
@@ -258,15 +436,22 @@ pub fn SettingsCheckbox(
     id: String,
     text: String,
     checked: Signal<bool>,
+    #[props(optional)] disabled: Option<bool>,
     onchange: EventHandler<String>,
 ) -> Element {
+    let is_disabled = disabled.unwrap_or(false);
+
     rsx! {
         label {
             id: "{id}",
             class: format!(
                     "rounded-md text-[16px] text-label-md flex items-center
-                     hover:bg-primary/10 hover:text-primary cursor-pointer
-                     transition-colors select-none whitespace-normal {}",
+                     transition-colors select-none whitespace-normal {} {}",
+                    if is_disabled {
+                        "opacity-50 cursor-not-allowed"
+                    } else {
+                        "cursor-pointer hover:bg-primary/10 hover:text-primary"
+                    },
                     if text.is_empty() {
                         // Квадратный контейнер и строгая центровка для иконки без текста
                         "w-8 h-8 justify-center"
@@ -275,6 +460,7 @@ pub fn SettingsCheckbox(
                         "px-2 py-1.5 w-full gap-2.5 justify-start"
                     }
             ),
+            aria_disabled: is_disabled,
 
             div {
                 class: format!(
@@ -303,6 +489,7 @@ pub fn SettingsCheckbox(
                 class: "sr-only",
                 r#type: "checkbox",
                 checked: checked(),
+                disabled: is_disabled,
                 onchange: move |e| onchange.call(e.value()),
             }
 

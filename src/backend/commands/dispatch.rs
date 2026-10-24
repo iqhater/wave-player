@@ -26,6 +26,12 @@ pub(crate) fn dispatch(
 
         PlayerCommand::SetVolume(volume) => playback::set_volume(state, volume),
 
+        PlayerCommand::SetPreamp(db) => playback::set_preamp(state, db),
+
+        PlayerCommand::ReanalyzeCurrent => track::reanalyze_current(state),
+
+        PlayerCommand::ClearAnalysisCache => track::clear_analysis_cache(state),
+
         PlayerCommand::ToggleRepeatTrack(enabled) => playback::toggle_repeat(state, enabled),
 
         PlayerCommand::SetPreservePitch(enabled) => playback::set_preserve_pitch(state, enabled),

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 // --- UI  --->  Audio Engine (Команды) ---
+#[allow(dead_code)] // Shared command contract; some variants are reserved for future UI.
 #[derive(Clone, Debug)]
 pub enum PlayerCommand {
     Play(PathBuf),
@@ -11,6 +12,9 @@ pub enum PlayerCommand {
     Seek(Duration),
     SetVolume(f32),
     SetSpeed(f32),
+    SetPreamp(f32),
+    ReanalyzeCurrent,
+    ClearAnalysisCache,
     /// Сохранять тональность при изменении скорости
     SetPreservePitch(bool),
 
@@ -67,6 +71,7 @@ pub struct CachedTrackAnalysis {
 }
 
 /// UI → Store: команды на сохранение/чтение. Отдельный канал, не трогает движок.
+#[allow(dead_code)] // Shared command contract; some variants are reserved for future UI.
 #[derive(Clone, Debug)]
 pub enum StoreCommand {
     /// Увеличить счётчик прослушиваний трека и записать в историю.
@@ -124,4 +129,6 @@ pub enum StoreCommand {
         waveform_cache_path: Option<PathBuf>,
         data: Vec<u8>,
     },
+
+    ClearAnalysisCache,
 }

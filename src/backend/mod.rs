@@ -4,6 +4,7 @@ pub mod cover_cache;
 mod decoder;
 pub mod engine_v2;
 mod filters;
+mod gain;
 pub mod metadata;
 mod meter;
 mod offline_render;

@@ -87,4 +87,19 @@ impl DbStore {
 
         Ok(true)
     }
+
+    pub fn clear_analysis_cache(&mut self) -> rusqlite::Result<()> {
+        let transaction = self.conn.transaction()?;
+
+        transaction.execute("DELETE FROM track_analysis_metadata", [])?;
+        transaction.execute(
+            "UPDATE tracks
+             SET waveform_cache_path = NULL,
+                 bpm = NULL,
+                 key = NULL",
+            [],
+        )?;
+
+        transaction.commit()
+    }
 }

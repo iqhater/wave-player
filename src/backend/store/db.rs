@@ -107,4 +107,52 @@ mod tests {
             (Some(waveform.to_path_buf()), Some(metadata.to_vec()))
         );
     }
+
+    #[test]
+    fn clear_analysis_cache_should_reset_track_analysis() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+
+        let mut db = DbStore { conn };
+
+        db.conn
+            .execute(
+                "INSERT INTO tracks
+                    (path, file_size, duration, bpm, key, waveform_cache_path)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    "music/track.wav",
+                    100,
+                    1000,
+                    120.0,
+                    "Am",
+                    "wavefroms/ab/example.v1.wfm"
+                ],
+            )
+            .unwrap();
+
+        let track = std::path::Path::new("music/track.wav");
+        let waveform = std::path::Path::new("wavefroms/ab/example.v1.wfm");
+
+        assert!(
+            db.save_cached_analysis(track, Some(waveform), b"{}")
+                .unwrap()
+        );
+
+        db.clear_analysis_cache().unwrap();
+
+        let stored = db.load_cached_analysis(track).unwrap().unwrap();
+        let (bpm, key): (Option<f32>, Option<String>) = db
+            .conn
+            .query_row(
+                "SELECT bpm, key FROM tracks WHERE path = ?1",
+                ["music/track.wav"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(stored.waveform_cache_path, None);
+        assert_eq!(stored.data, None);
+        assert_eq!((bpm, key), (None, None));
+    }
 }

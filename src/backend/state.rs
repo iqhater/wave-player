@@ -123,6 +123,7 @@ pub(crate) struct TrackState {
     pub is_playing: bool,
     pub started_at: Option<Instant>,
     pub repeat: bool,
+    pub finished: bool,
     pub session_listened_time: Duration,
     pub play_count_recorded: bool,
 }
@@ -137,6 +138,7 @@ impl TrackState {
             is_playing: false,
             started_at: None,
             repeat: false,
+            finished: false,
             session_listened_time: Duration::ZERO,
             play_count_recorded: false,
         }
@@ -169,10 +171,16 @@ pub(crate) struct PlaybackState {
     pub preserve_pitch: bool,
     pub preserve_pitch_shared: Arc<AtomicBool>,
     pub last_progress_update: Instant,
+
+    pub preamp_db: f32,
+    pub gain: Arc<AtomicU32>,
 }
 
 impl PlaybackState {
     fn new(playback_progress: Arc<AtomicU32>) -> Self {
+        let preamp_db = 3.5;
+        let gain = 10.0_f32.powf(preamp_db / 20.0);
+
         Self {
             playback_progress,
             volume: 0.35,
@@ -181,6 +189,26 @@ impl PlaybackState {
             preserve_pitch: false,
             preserve_pitch_shared: Arc::new(AtomicBool::new(false)),
             last_progress_update: Instant::now(),
+
+            preamp_db,
+            gain: Arc::new(AtomicU32::new(gain.to_bits())),
+        }
+    }
+
+    pub(crate) fn gain_db(&self) -> f32 {
+        self.preamp_db.clamp(-36.0, 24.0)
+    }
+
+    pub(crate) fn apply_gain(&self) {
+        let gain = 10.0_f32.powf(self.gain_db() / 20.0);
+
+        self.gain.store(gain.to_bits(), Ordering::Relaxed);
+    }
+
+    pub(crate) fn set_preamp_db(&mut self, db: f32) {
+        if db.is_finite() {
+            self.preamp_db = db.clamp(-24.0, 24.0);
+            self.apply_gain();
         }
     }
 }
@@ -203,5 +231,44 @@ impl EffectsState {
             stereo_width: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             pan: Arc::new(AtomicU32::new(0.0f32.to_bits())),
         }
+    }
+}
+
+#[cfg(test)]
+mod gain_tests {
+    use super::PlaybackState;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicU32;
+
+    fn state() -> PlaybackState {
+        PlaybackState::new(Arc::new(AtomicU32::new(0)))
+    }
+
+    #[test]
+    fn gain_db_should_follow_preamp() {
+        let mut state = state();
+        state.set_preamp_db(-6.0);
+
+        assert_eq!(state.gain_db(), -6.0);
+    }
+
+    #[test]
+    fn preamp_should_be_clamped_to_ui_range() {
+        let mut state = state();
+
+        state.set_preamp_db(100.0);
+        assert_eq!(state.preamp_db, 24.0);
+
+        state.set_preamp_db(-100.0);
+        assert_eq!(state.preamp_db, -24.0);
+    }
+
+    #[test]
+    fn invalid_preamp_should_be_ignored() {
+        let mut state = state();
+        state.set_preamp_db(1.0);
+        state.set_preamp_db(f32::NAN);
+
+        assert_eq!(state.preamp_db, 1.0);
     }
 }

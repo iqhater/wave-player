@@ -15,6 +15,7 @@ pub struct TrackMetadata {
 
 /// Parse metadata from audio file using audiotags.
 /// Falls back to filename parsing if tags are missing.
+#[cfg(test)]
 pub fn parse_track_metadata(path: &Path) -> TrackMetadata {
     parse_track_metadata_with_cover(path, None)
 }

@@ -176,6 +176,12 @@ pub(crate) fn dispatch(
             let _ = reply.try_send(result);
         }
 
+        StoreCommand::ClearAnalysisCache => {
+            if let Err(error) = db.clear_analysis_cache() {
+                eprintln!("failed to clear analysis cache: {error}");
+            }
+        }
+
         StoreCommand::SaveCachedAnalysis {
             path,
             waveform_cache_path,
