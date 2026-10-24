@@ -2,6 +2,19 @@
 
 ### 🚀 Features
 
+- *(audio)* Add grid sync and analysis settings
+
+### 🐛 Bug Fixes
+
+- *(ui)* Align grid and improve level meter
+
+### ⚙️ Miscellaneous Tasks
+
+- Publish cross-platform releases
+## [0.1.0-alpha.14] - 2026-10-23
+
+### 🚀 Features
+
 - *(config)* Persist settings and window state
 
 ### 🐛 Bug Fixes
