@@ -1,0 +1,343 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  # Keep in sync with the dioxus version in Cargo.toml.
+  DX_VERSION: 0.7.10
+  UPX_VERSION: 5.2.1
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            pkg-config
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build styles
+        run: pnpm build:css
+
+      - name: Run JavaScript tests
+        run: node --test tests/beat_grid.test.cjs
+
+      - name: Run Rust tests
+        run: cargo test --locked --features desktop
+
+  build:
+    name: Build (${{ matrix.os }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            package_args: "--package-types deb"
+          - os: macos-latest
+            package_args: "--package-types macos --package-types dmg"
+          - os: windows-latest
+            package_args: "--package-types msi"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            pkg-config
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build styles
+        run: pnpm build:css
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install dx (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          case "${{ runner.arch }}" in
+            X64) ARCH=x86_64 ;;
+            ARM64) ARCH=aarch64 ;;
+            *) echo "Unsupported architecture"; exit 1 ;;
+          esac
+
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            TRIPLE="${ARCH}-unknown-linux-gnu"
+          else
+            TRIPLE="${ARCH}-apple-darwin"
+          fi
+
+          DEST="$RUNNER_TEMP/dx"
+          mkdir -p "$DEST"
+          curl -fsSL "https://github.com/DioxusLabs/dioxus/releases/download/v${DX_VERSION}/dx-${TRIPLE}.tar.gz" | tar -xz -C "$DEST"
+
+          DX_BIN=$(find "$DEST" -type f -name dx -print -quit)
+          chmod +x "$DX_BIN"
+          echo "$(dirname "$DX_BIN")" >> "$GITHUB_PATH"
+
+      - name: Install dx (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Arch = if ("${{ runner.arch }}" -eq "ARM64") { "aarch64" } else { "x86_64" }
+          $Url = "https://github.com/DioxusLabs/dioxus/releases/download/v$env:DX_VERSION/dx-$Arch-pc-windows-msvc.zip"
+          $Dest = Join-Path $env:RUNNER_TEMP "dx"
+
+          New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+          Invoke-WebRequest -Uri $Url -OutFile (Join-Path $Dest "dx.zip")
+          Expand-Archive -Path (Join-Path $Dest "dx.zip") -DestinationPath $Dest -Force
+
+          $Dx = Get-ChildItem -Path $Dest -Recurse -Filter dx.exe | Select-Object -First 1
+          Add-Content -Path $env:GITHUB_PATH -Value $Dx.DirectoryName
+
+      - name: Install UPX (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          case "${{ runner.arch }}" in
+            X64) ARCH=amd64 ;;
+            ARM64) ARCH=arm64 ;;
+            *) echo "Unsupported architecture"; exit 1 ;;
+          esac
+
+          DEST="$RUNNER_TEMP/upx"
+          mkdir -p "$DEST"
+          curl -fsSL "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-${ARCH}_linux.tar.xz" | tar -xJ -C "$DEST"
+
+          UPX_BIN=$(find "$DEST" -type f -name upx -print -quit)
+          chmod +x "$UPX_BIN"
+          echo "$(dirname "$UPX_BIN")" >> "$GITHUB_PATH"
+
+      - name: Install UPX (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Url = "https://github.com/upx/upx/releases/download/v$env:UPX_VERSION/upx-$env:UPX_VERSION-win64.zip"
+          $Dest = Join-Path $env:RUNNER_TEMP "upx"
+
+          New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+          Invoke-WebRequest -Uri $Url -OutFile (Join-Path $Dest "upx.zip")
+          Expand-Archive -Path (Join-Path $Dest "upx.zip") -DestinationPath $Dest -Force
+
+          $Upx = Get-ChildItem -Path $Dest -Recurse -Filter upx.exe | Select-Object -First 1
+          Add-Content -Path $env:GITHUB_PATH -Value $Upx.DirectoryName
+
+      - name: Set MSI version
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $MsiVersion = "0.1.${{ github.run_number }}"
+          $Config = (Get-Content Dioxus.toml -Raw) -replace 'version = "0\.1\.0"', ('version = "' + $MsiVersion + '"')
+          Set-Content -Path Dioxus.toml -Value $Config -NoNewline
+
+      - name: Bundle desktop app
+        run: dx bundle --release --platform desktop ${{ matrix.package_args }} --out-dir dist
+
+      - name: Package portable archive (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARCH=$(echo "${{ runner.arch }}" | tr '[:upper:]' '[:lower:]')
+
+          BIN=$(find target/dx -type f -name wave_player -path "*/release/*/app/*" -print -quit)
+          APP_DIR=$(dirname "$BIN")
+
+          if ! upx --best --lzma "$BIN"; then
+            echo "::warning::UPX failed, shipping the uncompressed binary"
+          fi
+
+          mkdir -p dist/portable
+          cp -R "$APP_DIR"/. dist/portable/
+          cp README.md LICENSE dist/portable/
+          tar -czf "dist/WavePlayer_${VERSION}_linux_${ARCH}_portable.tar.gz" -C dist/portable .
+          rm -rf dist/portable
+
+      - name: Package portable archive (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARCH=$(echo "${{ runner.arch }}" | tr '[:upper:]' '[:lower:]')
+
+          APP=""
+          for CANDIDATE in dist/*.app; do
+            if [ -d "$CANDIDATE" ]; then
+              APP="$CANDIDATE"
+              break
+            fi
+          done
+
+          if [ -z "$APP" ]; then
+            echo "macOS .app bundle not found"
+            exit 1
+          fi
+
+          ditto -c -k --keepParent "$APP" "dist/WavePlayer_${VERSION}_macos_${ARCH}_portable.zip"
+          rm -rf "$APP"
+
+      - name: Package portable zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Version = "${{ steps.version.outputs.version }}"
+          $Arch = "${{ runner.arch }}".ToLower()
+
+          $Bin = Get-ChildItem -Path target/dx -Recurse -Filter wave_player.exe |
+            Where-Object { $_.FullName -match "\\release\\[^\\]+\\app\\" } |
+            Select-Object -First 1
+          $AppDir = $Bin.Directory.FullName
+
+          upx --best --lzma $Bin.FullName
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "UPX failed, shipping the uncompressed binary"
+          }
+
+          New-Item -ItemType Directory -Force -Path dist/portable | Out-Null
+          Copy-Item -Path "$AppDir\*" -Destination dist/portable -Recurse
+          Copy-Item README.md, LICENSE dist/portable/
+          Compress-Archive -Path dist/portable/* -DestinationPath "dist/WavePlayer_${Version}_windows_${Arch}_portable.zip"
+          Remove-Item -Recurse -Force dist/portable
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave_player-${{ runner.os }}-${{ runner.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [check, build]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          TAG="v${VERSION}-build.${RUN_NUMBER}"
+          TITLE="Wave Player ${VERSION} (build ${RUN_NUMBER})"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "$TITLE" \
+              --target "$GITHUB_SHA" \
+              --generate-notes \
+              --prerelease
+          fi

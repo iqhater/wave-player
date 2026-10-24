@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
+
 /* Run:
  *
     Desktop:
@@ -13,6 +18,7 @@ mod shared;
 use crate::gui::route::Route;
 use async_broadcast::{Receiver as BroadcastReceiver, broadcast};
 use backend::engine_v2::run_audio_loop_v2;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
@@ -79,9 +85,57 @@ impl PlayerContext {
     }
 }
 
+fn app_data_dir() -> PathBuf {
+    // Keep the existing portable layout when the working directory is writable.
+    if let Ok(current) = std::env::current_dir() {
+        let portable = current.join("wave_player_data");
+
+        if std::fs::create_dir_all(&portable).is_ok() {
+            return portable;
+        }
+    }
+
+    let fallback = platform_data_dir();
+    let _ = std::fs::create_dir_all(&fallback);
+
+    fallback
+}
+
+fn platform_data_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(base) = std::env::var_os("LOCALAPPDATA").or_else(|| std::env::var_os("APPDATA"))
+        {
+            return PathBuf::from(base).join("Wave Player");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join("Library/Application Support/Wave Player");
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if let Some(base) = std::env::var_os("XDG_DATA_HOME") {
+            return PathBuf::from(base).join("wave-player");
+        }
+
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(".local/share/wave-player");
+        }
+    }
+
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("wave_player_data")
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // init app config
-    let data_dir = std::env::current_dir().unwrap().join("wave_player_data");
+    let data_dir = app_data_dir();
     let config_store = ConfigStore::new(data_dir.join("config.json"));
     let config = config_store.load_with_default();
 

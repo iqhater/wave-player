@@ -69,11 +69,11 @@ embed-resource = "3.0.11" # Favicon fix include
 #     "-Zlocation-detail=none"
 # ]
 
-# [profile.release]
-# opt-level = "z"     # Оптимизация по размеру кода (вместо "3" для скорости)
-# debug = false
-# lto = true          # Link Time Optimization (удаляет неиспользуемый код из зависимостей)
-# codegen-units = 1   # Улучшает работу LTO и сжатие
-# panic = "abort"     # Удаляет тяжелую инфраструктуру для отлова паник
-# # strip = "debuginfo" # Автоматически удаляет отладочную информацию (символы) из файлов
-# incremental = false
+[profile.release]
+opt-level = "z"     # Оптимизация по размеру кода (вместо "3" для скорости)
+debug = false
+lto = true          # Link Time Optimization (удаляет неиспользуемый код из зависимостей)
+codegen-units = 1   # Улучшает работу LTO и сжатие
+panic = "abort"     # Удаляет тяжелую инфраструктуру для отлова паник
+# strip = "debuginfo" # Автоматически удаляет отладочную информацию (символы) из файлов
+incremental = false
