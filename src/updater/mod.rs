@@ -15,6 +15,9 @@ const USER_AGENT: &str = "wave-player-updater";
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
 
+/// Points the updater at a fake releases endpoint for local testing.
+const RELEASES_URL_ENV: &str = "WAVE_PLAYER_UPDATE_API";
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UpdateInfo {
     /// Release tag, for example `v0.1.0-alpha.15-build.42`.
@@ -282,8 +285,7 @@ fn latest_update() -> Result<Option<UpdateInfo>, String> {
         return Err("Automatic updates are not supported on this platform yet".to_string());
     };
 
-    let url =
-        format!("https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases?per_page=30");
+    let url = releases_url();
 
     let response = ureq::get(&url)
         .set("User-Agent", USER_AGENT)
@@ -348,6 +350,18 @@ fn latest_update() -> Result<Option<UpdateInfo>, String> {
         checksum,
         size: asset.size,
     }))
+}
+
+/// Allows `scripts/test-update.ps1` to serve releases from a local HTTP server.
+fn releases_url() -> String {
+    std::env::var(RELEASES_URL_ENV)
+        .ok()
+        .filter(|url| !url.trim().is_empty())
+        .unwrap_or_else(|| {
+            format!(
+                "https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases?per_page=30"
+            )
+        })
 }
 
 fn download_asset(
