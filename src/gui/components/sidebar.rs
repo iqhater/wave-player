@@ -1,14 +1,37 @@
 use super::open_file::OpenFile;
-use crate::gui::layout::MobileMenuOpen;
+use crate::PlayerContext;
+use crate::gui::layout::{MobileMenuOpen, UpdateUIState};
 use crate::gui::route::Route;
+use crate::updater::{UpdateCommand, UpdateInfo, UpdateState};
 use dioxus::prelude::*;
+
+fn update_info(state: &UpdateState) -> Option<&UpdateInfo> {
+    match state {
+        UpdateState::Available(info) | UpdateState::ReadyToRestart(info) => Some(info),
+        UpdateState::Downloading { info, .. } => Some(info),
+        UpdateState::Error {
+            info: Some(info), ..
+        } => Some(info),
+        _ => None,
+    }
+}
 
 #[component]
 pub fn Sidebar() -> Element {
     let current_route = use_route::<Route>();
     let mut collapsed = use_signal(|| false);
-    let mut show_update_notice = use_signal(|| true);
+    let ctx = use_context::<PlayerContext>();
+    let update = use_context::<UpdateUIState>();
+    let update_state = update.state;
+    let mut dismissed_update_tag = update.dismissed_tag;
     let mut mobile_menu_open = use_context::<MobileMenuOpen>().0;
+
+    let current_update = update_state();
+    let notice_info = update_info(&current_update).cloned();
+    let show_update = notice_info
+        .as_ref()
+        .is_some_and(|info| dismissed_update_tag().as_deref() != Some(info.tag.as_str()));
+    let dismiss_tag = notice_info.as_ref().map(|info| info.tag.clone());
 
     let aside_class = if collapsed() {
         "fixed inset-0 z-50
@@ -182,7 +205,7 @@ pub fn Sidebar() -> Element {
             }
 
             // Bottom update/app info block
-            if !collapsed() && show_update_notice() {
+            if !collapsed() && show_update {
                 div {
                     class: "mt-auto w-[calc(100%-2rem)] max-w-[520px] mx-auto p-4
                             bg-primary rounded-2xl text-surface
@@ -194,8 +217,10 @@ pub fn Sidebar() -> Element {
 
                         p {
                             class: "text-[10px] text-on-surface font-medium
-                                    tracking-wide font-label-md text-label-md font-bold",
-                            "Version {crate::shared::APP_VERSION}"
+                                    tracking-wide font-label-md text-label-md font-bold truncate",
+                            if let Some(info) = notice_info.as_ref() {
+                                "Version {info.version}"
+                            }
                         }
 
                         button {
@@ -207,7 +232,11 @@ pub fn Sidebar() -> Element {
                             title: "Close update notification",
                             "aria-label": "Close update notification",
 
-                            onclick: move |_| show_update_notice.set(false),
+                            onclick: move |_| {
+                                if let Some(tag) = dismiss_tag.clone() {
+                                    dismissed_update_tag.set(Some(tag));
+                                }
+                            },
 
                             span {
                                 class: "material-symbols-outlined text-[18px]",
@@ -216,28 +245,129 @@ pub fn Sidebar() -> Element {
                         }
                     }
 
-                    p {
-                        class: "text-sm font-semibold mb-3 leading-tight
-                                tracking-tight text-surface-bright",
-                        "New update available"
-                    }
+                    {match current_update {
+                        UpdateState::Available(_) => rsx! {
+                            p {
+                                class: "text-sm font-semibold mb-3 leading-tight
+                                        tracking-tight text-surface-bright",
+                                "New update available"
+                            }
 
-                    button {
-                        class: "w-full py-2 bg-surface-bright
-                                hover:bg-surface-container-low cursor-pointer
-                                text-on-surface font-semibold rounded-xl text-xs
-                                active:scale-[0.98] transition-all flex
-                                items-center justify-center gap-2
-                                border border-outline-variant/20 shadow-sm",
+                            button {
+                                class: "w-full py-2 bg-surface-bright
+                                        hover:bg-surface-container-low cursor-pointer
+                                        text-on-surface font-semibold rounded-xl text-xs
+                                        active:scale-[0.98] transition-all flex
+                                        items-center justify-center gap-2
+                                        border border-outline-variant/20 shadow-sm",
+                                onclick: move |_| {
+                                    let _ = ctx.update_cmd_tx.read().try_send(UpdateCommand::Download);
+                                },
 
-                        span {
-                            class: "material-symbols-outlined text-sm
-                                    text-on-surface/90 font-normal",
-                            "update"
-                        }
+                                span {
+                                    class: "material-symbols-outlined text-sm
+                                            text-on-surface/90 font-normal",
+                                    "update"
+                                }
 
-                        "Update Now"
-                    }
+                                "Update Now"
+                            }
+                        },
+                        UpdateState::Downloading { downloaded, total, .. } => {
+                            let percent = total
+                                .filter(|total| *total > 0)
+                                .map(|total| (downloaded as f64 / total as f64 * 100.0).clamp(0.0, 100.0))
+                                .unwrap_or(0.0);
+
+                            rsx! {
+                                div {
+                                    class: "flex items-center justify-between gap-2 mb-2",
+                                    p {
+                                        class: "text-sm font-semibold leading-tight
+                                                tracking-tight text-surface-bright",
+                                        "Downloading update"
+                                    }
+                                    span {
+                                        class: "text-[11px] font-semibold tabular-nums",
+                                        "{percent:.0}%"
+                                    }
+                                }
+
+                                div {
+                                    class: "h-1.5 w-full overflow-hidden rounded-full bg-surface-bright/30",
+                                    div {
+                                        class: "h-full rounded-full bg-surface-bright transition-[width] duration-150",
+                                        style: "width: {percent:.0}%;",
+                                    }
+                                }
+                            }
+                        },
+                        UpdateState::ReadyToRestart(_) => rsx! {
+                            p {
+                                class: "text-sm font-semibold mb-1 leading-tight
+                                        tracking-tight text-surface-bright",
+                                "Update ready"
+                            }
+                            p {
+                                class: "text-[11px] leading-4 text-surface-bright/80 mb-3",
+                                "Restart to apply the update."
+                            }
+
+                            button {
+                                class: "w-full py-2 bg-surface-bright
+                                        hover:bg-surface-container-low cursor-pointer
+                                        text-on-surface font-semibold rounded-xl text-xs
+                                        active:scale-[0.98] transition-all flex
+                                        items-center justify-center gap-2
+                                        border border-outline-variant/20 shadow-sm",
+                                onclick: move |_| {
+                                    ctx.save_config_now();
+                                    let _ = ctx.update_cmd_tx.read().try_send(UpdateCommand::ApplyAndRestart);
+                                },
+
+                                span {
+                                    class: "material-symbols-outlined text-sm
+                                            text-on-surface/90 font-normal",
+                                    "restart_alt"
+                                }
+
+                                "Restart to update"
+                            }
+                        },
+                        UpdateState::Error { message, .. } => rsx! {
+                            p {
+                                class: "text-sm font-semibold mb-1 leading-tight
+                                        tracking-tight text-surface-bright",
+                                "Update failed"
+                            }
+                            p {
+                                class: "text-[11px] leading-4 text-surface-bright/80 mb-3
+                                        max-h-20 overflow-y-auto break-words",
+                                "{message}"
+                            }
+
+                            button {
+                                class: "w-full py-2 bg-surface-bright
+                                        hover:bg-surface-container-low cursor-pointer
+                                        text-on-surface font-semibold rounded-xl text-xs
+                                        active:scale-[0.98] transition-all flex
+                                        items-center justify-center gap-2
+                                        border border-outline-variant/20 shadow-sm",
+                                onclick: move |_| {
+                                    let _ = ctx.update_cmd_tx.read().try_send(UpdateCommand::Download);
+                                },
+
+                                span {
+                                    class: "material-symbols-outlined text-sm
+                                            text-on-surface/90 font-normal",
+                                    "refresh"
+                                }
+
+                                "Retry"
+                            }
+                        },
+                        _ => rsx! {},
+                    }}
                 }
             } else {
                 div {

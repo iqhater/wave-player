@@ -36,6 +36,10 @@ thiserror = "2.0.20" # derive macro error handling
 image = { version = "0.25.10", default-features = false, features = ["png"] } # app window favicon
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] } # convert uc to local pc time
 rand = "0.10.3" # randomize supporting (pseudo-)random generators
+semver = "1" # compare release tags in the updater
+ureq = { version = "2", features = ["json"] } # GitHub Releases API and downloads
+sha2 = "0.10" # verify update checksums
+zip = { version = "2", default-features = false, features = ["deflate"] } # unpack portable updates
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rfd = "0.17.2"

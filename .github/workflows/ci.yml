@@ -82,6 +82,9 @@ jobs:
     needs: check
     runs-on: ${{ matrix.os }}
 
+    env:
+      WAVE_PLAYER_BUILD: ${{ github.run_number }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -322,6 +325,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
 
       - name: Create GitHub release
         env:

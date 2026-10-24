@@ -14,8 +14,10 @@
 mod backend;
 mod gui;
 mod shared;
+mod updater;
 
 use crate::gui::route::Route;
+use crate::updater::{UpdateCommand, UpdateState};
 use async_broadcast::{Receiver as BroadcastReceiver, broadcast};
 use backend::engine_v2::run_audio_loop_v2;
 use std::path::PathBuf;
@@ -55,6 +57,10 @@ pub struct PlayerContext {
     // Store communication channel
     store_cmd_tx: GenerationalBox<flume::Sender<StoreCommand>, SyncStorage>,
     store_event_rx: GenerationalBox<BroadcastReceiver<StoreEvent>, SyncStorage>,
+
+    // In-app updater
+    update_cmd_tx: GenerationalBox<flume::Sender<UpdateCommand>, SyncStorage>,
+    update_state_rx: GenerationalBox<BroadcastReceiver<UpdateState>, SyncStorage>,
 
     // Settings JSON app config
     pub config: GenerationalBox<AppConfig, SyncStorage>,
@@ -167,7 +173,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         WindowBuilder::new()
             .with_title(format!(
                 "Wave Player. Version: {}",
-                crate::shared::APP_VERSION
+                crate::shared::version_label()
             ))
             .with_window_icon(Some(window_icon))
             .with_inner_size(LogicalSize::new(width, height))
@@ -198,6 +204,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let store_cmd_tx = store_tx.clone();
 
+    let (update_cmd_tx, update_cmd_rx) = flume::bounded::<UpdateCommand>(8);
+    let (mut update_state_tx, update_state_rx) = broadcast::<UpdateState>(32);
+    update_state_tx.set_overflow(true);
+    updater::spawn(update_cmd_rx, update_state_tx, data_dir.clone());
+
     run_audio_loop_v2(
         cmd_rx,
         playback_progress.clone(),
@@ -225,6 +236,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // store channels
         store_cmd_tx: owner.insert(store_tx),
         store_event_rx: owner.insert(store_broadcast_rx),
+
+        // in-app updater
+        update_cmd_tx: owner.insert(update_cmd_tx),
+        update_state_rx: owner.insert(update_state_rx),
 
         // app's config context
         config: owner.insert(config),

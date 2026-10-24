@@ -12,6 +12,7 @@ use crate::backend::metadata::TrackMetadata;
 use super::theme::{Theme, use_theme, use_theme_provider};
 use crate::PlayerContext;
 use crate::shared::event_types::{BeatGridData, PlayerEvent, StoreEvent};
+use crate::updater::UpdateState;
 use futures_util::StreamExt;
 
 #[cfg(feature = "desktop")]
@@ -53,6 +54,12 @@ pub struct ShowBeatGrid(pub Signal<bool>);
 
 #[derive(Clone, Copy)]
 pub struct BeatGridSnap(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct UpdateUIState {
+    pub state: Signal<UpdateState>,
+    pub dismissed_tag: Signal<Option<String>>,
+}
 
 #[derive(Clone, Copy)]
 pub struct PlaybackUIState {
@@ -134,6 +141,13 @@ pub fn RootLayout() -> Element {
     // Эти настройки доступны всем дочерним компонентам, включая Settings и Waveform.
     use_context_provider(|| show_beat_grid);
     use_context_provider(|| beat_grid_snap);
+
+    let update_state = use_signal(|| UpdateState::Idle);
+    let dismissed_update_tag = use_signal(|| None::<String>);
+    use_context_provider(|| UpdateUIState {
+        state: update_state,
+        dismissed_tag: dismissed_update_tag,
+    });
 
     #[cfg(feature = "desktop")]
     {
@@ -318,6 +332,24 @@ pub fn RootLayout() -> Element {
 
                     _ => {}
                 }
+            }
+        }
+    });
+
+    use_future(move || {
+        let mut update_rx = ctx.update_state_rx.read().clone();
+        let mut update_state = update_state;
+
+        if crate::updater::is_supported() {
+            let _ = ctx
+                .update_cmd_tx
+                .read()
+                .try_send(crate::updater::UpdateCommand::Check);
+        }
+
+        async move {
+            while let Some(state) = update_rx.next().await {
+                update_state.set(state);
             }
         }
     });

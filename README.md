@@ -49,6 +49,8 @@ Screenshots from the Windows build:
   persistence, and optional timeline snapping.
 - **Library and settings:** recently played tracks, favorites, SQLite storage,
   persistent settings, window geometry, and per-track analysis tools.
+- **Updates:** automatic checks from GitHub Releases with in-app download and
+  restart (Windows portable builds first).
 - **Export:** export the loop region to WAV with speed and effects applied.
 - **Interface:** dark and light themes, responsive desktop/mobile layout, and
   bundled fonts and icons.
@@ -157,6 +159,8 @@ The main goals are:
 - Changing pitch-preservation mode may rebuild the audio pipeline.
 - Cache/database recovery, audio device hot-swap, playlists, and crossfade are
   not implemented yet.
+- In-app updates currently support Windows portable builds; macOS and Linux
+  update paths are planned.
 
 ## Roadmap
 
