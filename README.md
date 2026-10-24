@@ -1,5 +1,18 @@
 # Wave Player
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
+[![Dioxus 0.7](https://img.shields.io/badge/Dioxus-0.7-blue.svg)](https://dioxuslabs.com/)
+
+> [!WARNING]
+> **Unstable alpha software.** This project is in early development. Expect
+> crashes, audio glitches, incomplete features, breaking changes, and
+> unoptimized CPU/RAM usage. First-time analysis and export can be slow on
+> large files. Configuration and database formats may change without notice.
+>
+> Do not rely on Wave Player as the only player for important sessions, and
+> back up the `wave_player_data` directory before testing a new build.
+
 Wave Player is a desktop-focused music player and audio playground built with Rust and Dioxus.
 
 The project combines a responsive interface with real-time audio processing features such as looping, time stretching, filters, stereo processing, waveform visualization, track analysis, and offline WAV export.
@@ -31,6 +44,8 @@ The project combines a responsive interface with real-time audio processing feat
   - Side
 - Smooth transitions for filter and spatial mode changes to reduce clicks and artifacts
 - Real-time time stretching with optional pitch preservation
+- Cancellable, latest-request-wins background analysis
+- Cached waveform, BPM, key, beat grid, and loudness results
 
 ### Track analysis
 
@@ -39,13 +54,14 @@ The project combines a responsive interface with real-time audio processing feat
 - Musical key detection
 - Audio metadata extraction
 - Album and track information display
-- Loudness analysis infrastructure
+- Integrated LUFS loudness analysis
 
 ### Library and storage
 
 - Recently played tracks
 - Local favorites
-- Persistent application settings
+- Persistent application settings, including window size, position, and maximized state
+- Atomic `config.json` writes
 - SQLite-backed track data
 - Database migrations
 - Cached analysis data
@@ -81,16 +97,20 @@ Actual format support may depend on the decoder capabilities and the specific fi
 
 ## Technology stack
 
-- [Rust](https://www.rust-lang.org/)
-- [Dioxus](https://dioxuslabs.com/)
-- [rodio](https://github.com/RustAudio/rodio)
+- [Rust](https://www.rust-lang.org/) 1.85+ (edition 2024)
+- [Dioxus](https://dioxuslabs.com/) 0.7
+- [rodio](https://github.com/RustAudio/rodio) 0.22
 - [Symphonia](https://github.com/pdeljanov/Symphonia)
-- [SQLite](https://www.sqlite.org/)
-- [rusqlite](https://github.com/rusqlite/rusqlite)
+- [stratum-dsp](https://crates.io/crates/stratum-dsp)
+- [ebur128](https://crates.io/crates/ebur128)
 - [timestretch](https://crates.io/crates/timestretch)
-- [math-audio-iir-fir](https://crates.io/crates/math-audio-iir-fir)
+- [math-iir-fir](https://crates.io/crates/math-iir-fir)
 - [hound](https://crates.io/crates/hound)
-- [Tailwind CSS](https://tailwindcss.com/)
+- [rusqlite](https://github.com/rusqlite/rusqlite) and SQLite
+- [audiotags](https://crates.io/crates/audiotags)
+- [flume](https://crates.io/crates/flume)
+- [async-broadcast](https://crates.io/crates/async-broadcast)
+- [Tailwind CSS](https://tailwindcss.com/) 4
 
 ## Architecture
 
@@ -145,26 +165,28 @@ Persistent storage runs independently from the audio engine:
 ```text
 src/
 ├── backend/
-│   ├── analysis/        # Waveform, BPM, key, and loudness analysis
-│   ├── commands/        # Audio command handlers
-│   ├── decoder.rs       # Audio decoding and pipeline construction
-│   ├── filters.rs       # Live low-pass and high-pass filters
-│   ├── offline_render.rs# Loop rendering and WAV export
-│   ├── spatial.rs       # Width, pan, and Mid/Side processing
-│   ├── state.rs         # Audio engine state
+│   ├── analysis/         # Waveform, BPM, key, LUFS, scheduling, and cache
+│   ├── commands/         # Audio command handlers
 │   ├── store/            # SQLite, config, cache, favorites, and recents
-│   └── timestretch.rs   # Real-time time stretching
+│   ├── decoder.rs        # Audio decoding and pipeline construction
+│   ├── engine_v2.rs      # Audio engine event loop
+│   ├── filters.rs        # Live low-pass and high-pass filters
+│   ├── offline_render.rs # Loop rendering and WAV export
+│   ├── spatial.rs        # Width, pan, and Mid/Side processing
+│   ├── state.rs          # Audio engine state
+│   ├── timestretch.rs    # Real-time time stretching
+│   └── waveform_cache.rs # Versioned waveform file cache
 ├── gui/
-│   ├── components/      # Reusable Dioxus components
-│   ├── screens/         # Application screens
-│   ├── layout.rs        # Main application layout
-│   ├── route.rs         # Application routes
-│   └── theme.rs         # Theme management
+│   ├── components/       # Reusable Dioxus components
+│   ├── screens/          # Application screens
+│   ├── layout.rs         # Main application layout
+│   ├── route.rs          # Application routes
+│   └── theme.rs          # Theme management
 ├── shared/
-│   ├── command_types.rs # Commands sent to backend workers
-│   ├── event_types.rs   # Events sent back to the UI
-│   └── store_types.rs   # Shared data structures
-└── main.rs              # Application bootstrap
+│   ├── command_types.rs  # Commands sent to backend workers
+│   ├── event_types.rs    # Events sent back to the UI
+│   └── store_types.rs    # Shared data structures
+└── main.rs               # Application bootstrap
 ```
 
 ## Requirements
@@ -176,6 +198,17 @@ Before running the project, install:
 - Node.js
 - pnpm
 - Dioxus CLI
+- Rust 1.85 or newer (the project uses edition 2024)
+- A system webview runtime: WebView2 on Windows, WebKitGTK on Linux, or the system WKWebView on macOS
+- Recent Node.js LTS and pnpm
+
+The build reads `assets/tailwind.css` at compile time, so generate it before
+running `cargo build` or `dx build`:
+
+```sh
+pnpm install
+pnpm build:css
+```
 
 Install the Dioxus CLI if necessary:
 
@@ -210,7 +243,7 @@ pnpm build:css
 Run the desktop application:
 
 ```sh
-dx serve --desktop
+dx serve --platform desktop
 ```
 
 Or run both steps together:
@@ -226,7 +259,7 @@ Android support is experimental.
 Build the stylesheet and start the Android target:
 
 ```sh
-pnpm build:css && dx serve --android
+pnpm build:css && dx serve --platform android
 ```
 
 Additional Android SDK and platform-specific setup may be required depending on the development environment.
@@ -242,8 +275,11 @@ cargo build --release
 For the desktop application, use the Dioxus CLI according to the target platform:
 
 ```sh
-dx build --release
+pnpm build:css
+dx bundle --release
 ```
+The packaging output and available bundle formats depend on the target
+platform. Check the Dioxus CLI output for the exact location.
 
 The exact packaging process may differ between Windows, Linux, Android, and other supported targets.
 
@@ -257,6 +293,13 @@ This may include:
 - JSON configuration
 - Cached waveform and analysis data
 
+The `config.json` file stores theme, audio processing settings, UI toggles,
+and the last window size, position, and maximized state.
+
+The data directory is resolved relative to the current working directory.
+Launch the application from the same directory to keep settings, history,
+and cached analysis data.
+
 The desktop webview cache is stored separately in the `webview_cache` directory during development.
 
 These paths are currently relative to the application working directory and may change in a future release.
@@ -269,7 +312,9 @@ The project is still under active development. Known limitations include:
 - Switching pitch-preservation mode may rebuild the audio pipeline.
 - Real-time and offline processing paths are still being aligned.
 - The current processing model primarily targets mono and stereo audio.
-- Background analysis results require additional protection against stale results after switching tracks.
+- First-time analysis of long tracks can still consume noticeable CPU time; results are cached afterwards.
+- There is no automatic recovery from corrupted cache or database files yet.
+- Windows is the primary development and testing platform; Linux, macOS, and Android builds are experimental.
 - Audio device recovery and device hot-swapping are not fully implemented.
 - Plugin hosting is not implemented yet.
 - There is no full playlist management system yet.
@@ -286,9 +331,8 @@ The project is still under active development. Known limitations include:
 - [x] Recently played tracks
 - [x] Local favorites
 - [ ] Playlist management
-- [ ] Crossfade between tracks
 - [ ] Auto gain between tracks
-- [ ] Better audio device recovery
+- [x] Persistent window geometry
 
 ### Audio processing
 
@@ -302,7 +346,6 @@ The project is still under active development. Known limitations include:
 - [ ] Parametric EQ
 - [ ] Compressor
 - [ ] Limiter
-- [ ] Improved real-time/offline processing parity
 - [ ] Plugin hosting for VST3 and CLAP
 
 ### Analysis
@@ -311,9 +354,8 @@ The project is still under active development. Known limitations include:
 - [x] BPM detection
 - [x] Key detection
 - [x] Metadata extraction
-- [ ] Track structure detection
-- [ ] Improved loudness workflow
-- [ ] More reliable cancellation of outdated analysis jobs
+- [x] Cancellation of outdated analysis jobs
+- [x] Persistent waveform and analysis cache
 
 ### User interface
 
@@ -369,6 +411,25 @@ Build the CSS:
 ```sh
 pnpm build:css
 ```
+
+## Reporting issues
+
+Wave Player is alpha software, so bug reports are especially useful. When
+opening an issue, include:
+
+- operating system and version;
+- Wave Player version or commit hash;
+- steps to reproduce the problem;
+- audio format and a short non-copyrighted test file if possible;
+- console output or the exact error message;
+- whether the issue reproduces with a clean `wave_player_data` directory.
+
+Please do not upload copyrighted music. A short synthetic test file is enough.
+
+## Contributing
+
+Bug reports and pull requests are welcome. For significant changes, open an
+issue first so the approach can be discussed before implementation.
 
 ## License
 

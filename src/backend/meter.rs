@@ -37,7 +37,7 @@ impl MeterState {
 
     pub(crate) fn read(&self) -> MeterReading {
         MeterReading {
-            peak: f32::from_bits(self.peak.load(Ordering::Relaxed)),
+            peak: f32::from_bits(self.peak.swap(0.0f32.to_bits(), Ordering::Relaxed)),
             rms: f32::from_bits(self.rms.load(Ordering::Relaxed)),
         }
     }
@@ -48,7 +48,7 @@ impl MeterState {
 
     fn publish(&self, peak: f32, rms: f32) {
         self.peak
-            .store(sanitize_level(peak).to_bits(), Ordering::Relaxed);
+            .fetch_max(sanitize_level(peak).to_bits(), Ordering::Relaxed);
 
         self.rms
             .store(sanitize_level(rms).to_bits(), Ordering::Relaxed);

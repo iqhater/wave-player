@@ -1,14 +1,14 @@
 {
   "window": {
-    "width": 1303,
-    "height": 947,
-    "x": 825,
-    "y": 94,
+    "width": 1327,
+    "height": 958,
+    "x": 859,
+    "y": 55,
     "maximized": false
   },
   "theme": "Dark",
   "audio": {
-    "volume": 0.2,
+    "volume": 0.35,
     "speed": 1.0,
     "preserve_pitch": false,
     "repeat_track": false,
@@ -24,6 +24,6 @@
     "loop_repeat_region": true,
     "timeline_progress_view": false,
     "show_beat_grid": true,
-    "beat_grid_snap": true
+    "beat_grid_snap": false
   }
 }

@@ -1,4 +1,5 @@
 use crate::gui::layout::PlaybackUIState;
+use crate::gui::theme::{Theme, use_theme};
 use dioxus::prelude::*;
 
 const BEAT_GRID_JS: &str = r#"
@@ -10,6 +11,7 @@ const BEAT_GRID_JS: &str = r#"
         offset: Number(data.offset) || 0,
         beats: data.beats || [],
         bars: data.bars || [],
+        theme: data.theme || "light",
     };
 
     const MINP = 20;   // минимальный отступ между линиями в px
@@ -81,16 +83,28 @@ const BEAT_GRID_JS: &str = r#"
             const barDuration =
                 beatDuration * 4.0;
 
+            const isDark = bg.theme === "dark";
+
+            // На светлой теме используем тёмный on-surface цвет,
+            // иначе белые линии полностью теряются на светлом фоне.
+            const beatColor = isDark
+                ? "rgba(255,255,255,0.22)"
+                : "rgba(27,28,28,0.26)";
+
+            const barColor = isDark
+                ? "rgba(255,255,255,0.45)"
+                : "rgba(27,28,28,0.50)";
+
             let gridInterval = beatDuration;
             let gridPhase = beatPhase;
-            let gridColor = "rgba(255,255,255,0.22)";
+            let gridColor = beatColor;
             let gridWidth = 1.0;
 
             // At zoom out, use bar lines instead of individual beats.
             if (gridInterval * pps < MINP * 1.5) {
                 gridInterval = barDuration;
                 gridPhase = barPhase;
-                gridColor = "rgba(255,255,255,0.45)";
+                gridColor = barColor;
                 gridWidth = 1.4;
             }
 
@@ -178,6 +192,7 @@ const BEAT_GRID_JS: &str = r#"
 #[component]
 pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>) -> Element {
     let playback = use_context::<PlaybackUIState>();
+    let theme = use_theme();
 
     use_effect(move || {
         // Поля PlaybackUIState — это Signal<T>, а не методы.
@@ -191,6 +206,8 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
         let grid = grid_signal();
         let offset = grid.as_ref().map(|grid| grid.offset).unwrap_or(0.0);
 
+        let is_dark = theme.get() == Theme::Dark;
+
         spawn(async move {
             let eval = dioxus::document::eval(BEAT_GRID_JS);
 
@@ -201,6 +218,7 @@ pub fn BeatGrid(total_duration: ReadSignal<f32>, snap_enabled: ReadSignal<bool>)
                 "offset": offset,
                 "beats": grid.as_ref().map(|grid| &grid.beats),
                 "bars": grid.as_ref().map(|grid| &grid.bars),
+                "theme": if is_dark { "dark" } else { "light" },
             }));
         });
     });

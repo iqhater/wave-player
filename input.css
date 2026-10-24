@@ -263,11 +263,12 @@
       var(--color-error) 100%
     );
 
-    transition: height 80ms ease-out;
+    transition: clip-path 80ms linear;
+    will-change: clip-path;
   }
 
   .volume-meter-peak {
-    transition: bottom 80ms ease-out;
+    transition: bottom 80ms linear;
   }
 
 }
