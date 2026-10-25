@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -78,7 +79,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.os }})
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: check
     runs-on: ${{ matrix.os }}
 
@@ -308,7 +309,7 @@ jobs:
 
   publish:
     name: Publish release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [check, build]
     runs-on: ubuntu-latest
 
@@ -327,6 +328,15 @@ jobs:
           VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Verify tag matches Cargo version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match Cargo.toml version v${VERSION}"
+            exit 1
+          fi
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -344,15 +354,19 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
-          TAG="v${VERSION}-build.${RUN_NUMBER}"
+          TAG="$GITHUB_REF_NAME"
           TITLE="Wave Player ${VERSION} (build ${RUN_NUMBER})"
+
+          PRERELEASE=""
+          case "$VERSION" in
+            *-*) PRERELEASE="--prerelease" ;;
+          esac
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
             gh release create "$TAG" dist/* \
               --title "$TITLE" \
-              --target "$GITHUB_SHA" \
               --generate-notes \
-              --prerelease
+              $PRERELEASE
           fi

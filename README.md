@@ -115,7 +115,23 @@ dx bundle --release --platform desktop --package-types <deb|dmg|msi>
 ```
 
 Bundle formats depend on the target platform. CI builds the native package and
-portable archives, then publishes them to GitHub Releases.
+portable archives only for version tags, then publishes them to GitHub Releases.
+Pushes to `main` without a tag run the checks but publish nothing.
+
+To publish a release, bump `version` in `Cargo.toml`, refresh the lockfile,
+commit both files, and push a tag with the same version:
+
+```sh
+# version = "0.1.0-alpha.16" in Cargo.toml
+cargo check
+git add Cargo.toml Cargo.lock
+git commit -m "chore(release): 0.1.0-alpha.16"
+git tag v0.1.0-alpha.16
+git push origin main
+git push origin v0.1.0-alpha.16
+```
+
+CI fails if the tag does not match the `Cargo.toml` version.
 
 ## Data directory
 
