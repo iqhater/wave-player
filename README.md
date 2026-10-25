@@ -1,8 +1,26 @@
-# Wave Player
+<p align="center">
+  <img src="assets/icon.png" width="128" alt="Wave Player icon">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
-[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
-[![Dioxus 0.7](https://img.shields.io/badge/Dioxus-0.7-blue.svg)](https://dioxuslabs.com/)
+<h1 align="center">Wave Player</h1>
+
+<p align="center">
+  <strong>A waveform-first music player, reimagined.</strong><br>
+  Drag and resize a loop region right on the waveform, shape it with real-time
+  speed and effects, and export just that slice to WAV — with BPM, key, and
+  loudness always in view.
+</p>
+
+<p align="center">
+  <a href="https://github.com/iqhater/wave-player/releases"><img src="https://img.shields.io/github/v/release/iqhater/wave-player?include_prereleases&style=flat-square&label=release&color=e8467d&labelColor=3a3d44" alt="Latest release"></a>
+  <a href="https://github.com/iqhater/wave-player/releases"><img src="https://img.shields.io/github/downloads/iqhater/wave-player/total?style=flat-square&label=downloads&color=7c5cff&labelColor=3a3d44" alt="Total downloads"></a>
+  <img src="https://img.shields.io/badge/Windows-10_%7C_11-29b6d8?style=flat-square&labelColor=3a3d44&logo=windows&logoColor=white" alt="Windows 10 and 11">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/iqhater/wave-player?style=flat-square&label=license&color=8b8f98&labelColor=3a3d44" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/iqhater/wave-player/releases"><img src="https://img.shields.io/badge/DOWNLOAD_FOR_WINDOWS-WAVE_PLAYER_SETUP-e8467d?style=for-the-badge&labelColor=55585f&logo=windows&logoColor=white" alt="Download Wave Player for Windows"></a>
+</p>
 
 > [!WARNING]
 > **Unstable alpha software.** Expect crashes, audio glitches, incomplete
@@ -14,10 +32,11 @@ Dioxus. It combines waveform navigation with real-time processing: looping,
 time stretching, filters, stereo tools, track analysis, and WAV export.
 
 Prebuilt installers and portable archives for Windows, macOS, and Linux are
-published in [GitHub Releases](../../releases). Portable Windows and Linux
-binaries are compressed with UPX (some antivirus tools may flag packed
-executables). Builds are unsigned; on macOS, right-click the app and choose
-**Open** the first time.
+published in
+[GitHub Releases](https://github.com/iqhater/wave-player/releases). Portable
+Windows and Linux binaries are compressed with UPX (some antivirus tools may
+flag packed executables). Builds are unsigned; on macOS, right-click the app
+and choose **Open** the first time.
 
 ## Screenshots
 
