@@ -215,16 +215,23 @@ jobs:
           $Upx = Get-ChildItem -Path $Dest -Recurse -Filter upx.exe | Select-Object -First 1
           Add-Content -Path $env:GITHUB_PATH -Value $Upx.DirectoryName
 
-      - name: Set MSI version
+      - name: Bundle desktop app
+        run: dx bundle --release --platform desktop ${{ matrix.package_args }} --out-dir dist
+
+      - name: Name MSI with the release version
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $MsiVersion = "0.1.${{ github.run_number }}"
-          $Config = (Get-Content Dioxus.toml -Raw) -replace 'version = "0\.1\.0"', ('version = "' + $MsiVersion + '"')
-          Set-Content -Path Dioxus.toml -Value $Config -NoNewline
+          $Version = "${{ steps.version.outputs.version }}"
+          $Build = "${{ github.run_number }}"
+          $Arch = "${{ runner.arch }}".ToLower()
+          $Msi = Get-ChildItem -Path dist -Filter *.msi -File | Select-Object -First 1
 
-      - name: Bundle desktop app
-        run: dx bundle --release --platform desktop ${{ matrix.package_args }} --out-dir dist
+          if (-not $Msi) {
+            throw "MSI bundle not found in dist"
+          }
+
+          Rename-Item -Path $Msi.FullName -NewName "WavePlayer_${Version}-build.${Build}_${Arch}.msi"
 
       - name: Package portable archive (Linux)
         if: runner.os == 'Linux'

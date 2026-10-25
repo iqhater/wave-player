@@ -33,10 +33,7 @@ preprocess = "tailwindcss -i ./input.css -o ./assets/tailwind.css --minify"
 identifier = "dev.waveplayer"
 publisher = "iqhater"
 icon = ["assets/icon.png"]
-# NSIS/MSI require a numeric version; keep SemVer in Cargo.toml.
-[bundle.windows.wix]
-version = "0.1.0"
-# icon = []
+# The MSI version is derived from Cargo.toml; the pre-release suffix is stripped.
 
 
 # Запускается один раз перед сборкой проекта (dx build)
