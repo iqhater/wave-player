@@ -120,10 +120,12 @@ portable archives, then publishes them to GitHub Releases.
 ## Data directory
 
 Wave Player stores the SQLite database, `config.json`, and analysis caches in
-`wave_player_data`. It uses the working directory when it is writable (portable
-and development layout) and otherwise falls back to the platform user data
-directory: `%LOCALAPPDATA%\Wave Player`, `~/Library/Application Support/Wave
-Player`, or `$XDG_DATA_HOME/wave-player` (`~/.local/share/wave-player`).
+`wave_player_data` next to the executable when that directory is writable
+(portable and development layout); the WebView cache lives in `webview_cache`
+beside it. Installed builds fall back to the platform user data directory:
+`%LOCALAPPDATA%\Wave Player`, `~/Library/Application Support/Wave Player`, or
+`$XDG_DATA_HOME/wave-player` (`~/.local/share/wave-player`), and keep the
+WebView cache there as well.
 
 ## Project status
 

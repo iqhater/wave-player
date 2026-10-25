@@ -10,7 +10,7 @@ use crate::shared::{APP_BUILD, APP_VERSION};
 
 /// Public GitHub repository that hosts the releases.
 const GITHUB_OWNER: &str = "iqhater";
-const GITHUB_REPO: &str = "wave_player";
+const GITHUB_REPO: &str = "wave-player";
 const USER_AGENT: &str = "wave-player-updater";
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
@@ -54,9 +54,20 @@ pub enum UpdateCommand {
     ApplyAndRestart,
 }
 
-/// Returns `false` on platforms without a portable update path yet.
+/// Returns `false` on platforms without a portable update path and for
+/// read-only installs, where the executable cannot be replaced in place.
 pub fn is_supported() -> bool {
-    portable_asset_suffix().is_some()
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+    *SUPPORTED.get_or_init(|| {
+        portable_asset_suffix().is_some()
+            && std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(Path::to_path_buf))
+                .is_some_and(|directory| {
+                    crate::shared::probe_directory_writable(&directory).is_ok()
+                })
+    })
 }
 
 /// Starts the background update worker. Network and file operations never run
@@ -584,17 +595,11 @@ fn apply_platform(
 
 #[cfg(target_os = "windows")]
 fn ensure_writable(directory: &Path) -> Result<(), String> {
-    let probe = directory.join(".wave_player_update_probe");
-
-    fs::write(&probe, b"probe").map_err(|error| {
+    crate::shared::probe_directory_writable(directory).map_err(|error| {
         format!(
             "The application directory is read-only. Download the installer from GitHub Releases instead: {error}"
         )
-    })?;
-
-    let _ = fs::remove_file(&probe);
-
-    Ok(())
+    })
 }
 
 #[cfg(target_os = "windows")]

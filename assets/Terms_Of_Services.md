@@ -21,10 +21,10 @@ Last updated: 25.10.2026
    Wave Player is provided “as is.” The developers of the App disclaim any liability for any potential losses, damages, or consequences resulting from the use of the App, to the fullest extent permitted by law.
 
 7. **Data Collection**\
-   The App does not collect any personal data, analytics, or crash reports. All audio processing is performed locally on your device, and your library, playlists, settings, and play history are stored only on your device. On platforms with in-app updates, the App contacts GitHub to check for and download updates as described in the Privacy Policy. No personal data is included in these requests, and update archives are verified with a SHA-256 checksum before installation.
+   The App does not collect any personal data, analytics, or crash reports. All audio processing is performed locally on your device, and your library, playlists, settings, and play history are stored only on your device. In builds with in-app updates, the App contacts GitHub to check for and download updates as described in the Privacy Policy. No personal data is included in these requests, and update archives are verified with a SHA-256 checksum before installation.
 
 8. **Updates**\
-   On platforms with in-app updates, the App checks for new versions at startup and every 24 hours and offers them in the interface. No update archive is downloaded or installed without your confirmation. Updates are distributed through GitHub Releases, are provided under these Terms, and may add, change, or remove features. Installing an update replaces the application executable and bundled assets on your device. You may continue using the current version by declining an offered update.
+   In builds with in-app updates (currently Windows portable builds), the App checks for new versions at startup and every 24 hours and offers them in the interface. No update archive is downloaded or installed without your confirmation. Updates are distributed through GitHub Releases, are provided under these Terms, and may add, change, or remove features. Installing an update replaces the application executable and bundled assets on your device. You may continue using the current version by declining an offered update.
 
 9. **Changes to the Terms**\
    We may update these Terms at any time. We recommend reviewing them periodically to stay informed about any changes.

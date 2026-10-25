@@ -20,7 +20,7 @@ use crate::gui::route::Route;
 use crate::updater::{UpdateCommand, UpdateState};
 use async_broadcast::{Receiver as BroadcastReceiver, broadcast};
 use backend::engine_v2::run_audio_loop_v2;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
@@ -91,14 +91,25 @@ impl PlayerContext {
     }
 }
 
-fn app_data_dir() -> PathBuf {
-    // Keep the existing portable layout when the working directory is writable.
-    if let Ok(current) = std::env::current_dir() {
-        let portable = current.join("wave_player_data");
+/// Returns the executable directory when the portable layout is writable.
+fn portable_root() -> Option<PathBuf> {
+    let directory = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let portable = directory.join("wave_player_data");
 
-        if std::fs::create_dir_all(&portable).is_ok() {
-            return portable;
-        }
+    if std::fs::create_dir_all(&portable).is_ok()
+        && crate::shared::probe_directory_writable(&portable).is_ok()
+    {
+        Some(directory)
+    } else {
+        None
+    }
+}
+
+/// Installed builds live in a read-only directory such as Program Files, where
+/// the platform data directory is used instead.
+fn app_data_dir(portable_root: Option<&Path>) -> PathBuf {
+    if let Some(root) = portable_root {
+        return root.join("wave_player_data");
     }
 
     let fallback = platform_data_dir();
@@ -141,7 +152,8 @@ fn platform_data_dir() -> PathBuf {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // init app config
-    let data_dir = app_data_dir();
+    let portable_root = portable_root();
+    let data_dir = app_data_dir(portable_root.as_deref());
     let config_store = ConfigStore::new(data_dir.join("config.json"));
     let config = config_store.load_with_default();
 
@@ -254,9 +266,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(feature = "desktop")]
     {
-        let cache_dir = std::env::current_dir()
-            .expect("failed to get current directory")
-            .join("webview_cache");
+        // WebView2 needs a writable data directory; Program Files is not one for
+        // MSI installs.
+        let cache_dir = match &portable_root {
+            Some(root) => root.join("webview_cache"),
+            None => data_dir.join("webview_cache"),
+        };
+        let _ = std::fs::create_dir_all(&cache_dir);
 
         dioxus::LaunchBuilder::new()
             .with_cfg(
