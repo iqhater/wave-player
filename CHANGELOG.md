@@ -1,4 +1,30 @@
-## [unreleased]
+## [0.1.0-alpha.16] - 2026-10-27
+
+### 🚀 Features
+
+- *(updater)* Add in-app updates from GitHub Releases
+
+### 🐛 Bug Fixes
+
+- *(app)* Start from read-only install dirs
+- *(footer)* Point repo and bug report links at the project
+- *(export)* Make loop export resilient to decoder and path issues
+
+### 📚 Documentation
+
+- *(policy)* Disclose updater network access
+- *(readme)* Add Gatefold-style header
+
+### 🧪 Testing
+
+- *(updater)* Add local update flow harness
+
+### ⚙️ Miscellaneous Tasks
+
+- *(msi)* Keep build number in the installer name
+- *(repo)* Stop tracking local app data
+- Publish releases only for version tags
+## [0.1.0-alpha.15] - 2026-10-24
 
 ### 🚀 Features
 

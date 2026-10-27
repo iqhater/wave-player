@@ -7036,7 +7036,7 @@ dependencies = [
 
 [[package]]
 name = "wave_player"
-version = "0.1.0-alpha.15"
+version = "0.1.0-alpha.16"
 dependencies = [
  "async-broadcast",
  "audiotags",
