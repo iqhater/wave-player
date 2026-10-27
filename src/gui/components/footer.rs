@@ -14,10 +14,10 @@ pub fn Footer() -> Element {
                 Link { class: "font-label-sm text-label-sm text-secondary opacity-60 hover:text-primary transition-all", to: Route::TermsOfService, "Terms Of Service" }
                 Link { class: "font-label-sm text-label-sm text-secondary opacity-60 hover:text-primary transition-all", to: Route::PrivacyPolicy, "Privacy Policy" }
                 a { class: "flex items-center font-label-sm text-label-sm text-secondary opacity-60 hover:text-primary transition-all",
-                    href: "https://github.com/iqhater",
+                    href: "https://github.com/iqhater/wave-player",
                     span { class: "material-symbols-outlined text-[24px]", "code" } "Github Repo" }
                 a { class: "flex items-center font-label-sm text-label-sm text-secondary opacity-60 hover:text-primary transition-all",
-                    href: "https://github.com/iqhater",
+                    href: "https://github.com/iqhater/wave-player/issues/new",
                     span { class: "material-symbols-outlined text-[24px]", "bug_report" } "Bug Report" }
                 Link {
                     class: "flex items-center font-label-sm text-label-sm text-secondary opacity-60 hover:text-primary transition-all",

@@ -204,7 +204,6 @@ The main goals are:
 - [ ] Playlists and queue management
 - [ ] Crossfade and automatic gain between tracks
 - [ ] Parametric EQ, compressor, and limiter
-- [ ] VST3/CLAP plugin hosting
 - [ ] Improved accessibility and mobile interaction
 
 ## Development principles
