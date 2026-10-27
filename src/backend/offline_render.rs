@@ -121,7 +121,9 @@ fn decode_loop(settings: &RenderSettings) -> Result<(Vec<StereoFrame>, u32), Aud
         return Err(AudioError::FileCorrupted);
     }
 
-    let track_duration = decoder.total_duration().unwrap_or(Duration::ZERO);
+    // Some decoders do not report a total duration; fall back to the loop end so
+    // the requested region is still honoured instead of collapsing to zero.
+    let track_duration = decoder.total_duration().unwrap_or(settings.loop_end);
 
     let start = settings.loop_start.min(track_duration);
     let end = settings.loop_end.min(track_duration);
@@ -130,9 +132,14 @@ fn decode_loop(settings: &RenderSettings) -> Result<(Vec<StereoFrame>, u32), Aud
         return Err(AudioError::RenderAudioFailed);
     }
 
-    decoder
-        .try_seek(start)
-        .map_err(|_| AudioError::SeekFailed)?;
+    // Seeking to the very beginning is a no-op for a freshly opened decoder and
+    // some backends reject it with `SeekError::NotSupported`. Only seek when the
+    // loop actually starts past the beginning.
+    if start > Duration::ZERO {
+        decoder
+            .try_seek(start)
+            .map_err(|_| AudioError::SeekFailed)?;
+    }
 
     let render_duration = end - start;
 
@@ -439,4 +446,128 @@ fn write_wav(path: &Path, sample_rate: u32, frames: &[StereoFrame]) -> Result<()
         .map_err(|_| AudioError::RenderAudioFailed)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
+
+    /// Writes a short 24-bit stereo WAV that the decoder can read back.
+    fn write_source_wav(directory: &Path, seconds: f32) -> PathBuf {
+        const SAMPLE_RATE: u32 = 48_000;
+
+        let path = directory.join("source.wav");
+
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: SAMPLE_RATE,
+            bits_per_sample: 24,
+            sample_format: SampleFormat::Int,
+        };
+
+        let mut writer = WavWriter::create(&path, spec).unwrap();
+
+        let frames = (SAMPLE_RATE as f32 * seconds) as usize;
+
+        for frame in 0..frames {
+            let value =
+                (frame as f32 / SAMPLE_RATE as f32 * 440.0 * std::f32::consts::TAU).sin() * 0.5;
+            let sample = (value * 8_388_607.0) as i32;
+
+            writer.write_sample(sample).unwrap();
+            writer.write_sample(sample).unwrap();
+        }
+
+        writer.finalize().unwrap();
+
+        path
+    }
+
+    struct Fixture {
+        root: PathBuf,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+
+            let root = std::env::temp_dir().join(format!(
+                "wave-player-render-{}-{unique}-{}",
+                std::process::id(),
+                NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed)
+            ));
+
+            std::fs::create_dir_all(&root).unwrap();
+
+            Self { root }
+        }
+
+        fn settings(&self, loop_start: Duration, loop_end: Duration) -> RenderSettings {
+            RenderSettings {
+                input_path: write_source_wav(&self.root, 2.0),
+                output_path: self.root.join("exported.wav"),
+
+                loop_start,
+                loop_end,
+
+                speed: 1.0,
+                preserve_pitch: false,
+
+                low_pass: None,
+                high_pass: None,
+
+                mid_side_mode: RenderMidSideMode::Stereo,
+                stereo_width: 1.0,
+                pan: 0.0,
+            }
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// Regression: a loop starting at zero used to fail because the decoder was
+    /// asked to seek to `Duration::ZERO`, which some backends reject.
+    #[test]
+    fn render_loop_should_export_loop_starting_at_zero() {
+        let fixture = Fixture::new();
+        let settings = fixture.settings(Duration::ZERO, Duration::from_millis(500));
+
+        render_loop(&settings, |_| {}).unwrap();
+
+        let metadata = std::fs::metadata(&settings.output_path).unwrap();
+        assert!(
+            metadata.len() > 44,
+            "exported WAV should contain audio data"
+        );
+    }
+
+    #[test]
+    fn render_loop_should_export_loop_starting_past_zero() {
+        let fixture = Fixture::new();
+        let settings = fixture.settings(Duration::from_millis(500), Duration::from_millis(1_500));
+
+        render_loop(&settings, |_| {}).unwrap();
+
+        assert!(settings.output_path.is_file());
+    }
+
+    #[test]
+    fn render_loop_should_reject_empty_loop() {
+        let fixture = Fixture::new();
+        let settings = fixture.settings(Duration::from_millis(500), Duration::from_millis(500));
+
+        let result = render_loop(&settings, |_| {});
+
+        assert!(matches!(result, Err(AudioError::RenderAudioFailed)));
+    }
 }

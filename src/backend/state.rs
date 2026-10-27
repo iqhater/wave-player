@@ -25,6 +25,9 @@ pub(crate) struct AudioState {
     pub(crate) error_tx: ErrorSender,
 
     pub(crate) cover_cache_dir: PathBuf,
+    /// Writable application data directory, used as the base for relative
+    /// export paths.
+    pub(crate) data_dir: PathBuf,
 
     pub(crate) meter: MeterState,
     last_meter_update: Instant,
@@ -40,6 +43,7 @@ impl AudioState {
         store_cmd_tx: flume::Sender<StoreCommand>,
         error_tx: ErrorSender,
         cover_cache_dir: PathBuf,
+        data_dir: PathBuf,
     ) -> Self {
         let analysis = AnalysisService::new(cover_cache_dir.clone(), store_cmd_tx.clone());
 
@@ -56,6 +60,7 @@ impl AudioState {
             store_cmd_tx,
             error_tx,
             cover_cache_dir,
+            data_dir,
 
             meter: MeterState::new(),
             last_meter_update: Instant::now(),

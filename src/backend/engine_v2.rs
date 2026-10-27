@@ -23,6 +23,7 @@ pub fn run_audio_loop_v2(
     store_cmd_tx: flume::Sender<StoreCommand>,
     error_tx: ErrorSender,
     cover_cache_dir: PathBuf,
+    data_dir: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
     thread::spawn(move || {
         let sink_handle = match DeviceSinkBuilder::open_default_sink() {
@@ -42,6 +43,7 @@ pub fn run_audio_loop_v2(
             store_cmd_tx,
             error_tx,
             cover_cache_dir,
+            data_dir,
         );
 
         loop {

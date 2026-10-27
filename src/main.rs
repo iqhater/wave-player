@@ -228,6 +228,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         store_cmd_tx,
         error_tx,
         data_dir.join("cache"),
+        data_dir.clone(),
     )
     .unwrap();
 
