@@ -32,7 +32,7 @@ preprocess = "tailwindcss -i ./input.css -o ./assets/tailwind.css --minify"
 [bundle]
 identifier = "dev.waveplayer"
 publisher = "iqhater"
-icon = ["assets/icon.png"]
+icon = ["assets/icon.png", "assets/favicon.ico"]
 # The MSI version is derived from Cargo.toml; the pre-release suffix is stripped.
 
 
