@@ -1,6 +1,7 @@
 use super::route::Route;
-use crate::shared::command_types::PlayerCommand;
+use crate::shared::command_types::{PlayerCommand, StoreCommand};
 use dioxus::prelude::*;
+use std::path::PathBuf;
 
 use super::components::{
     errors_toast::ErrorsToast, footer::Footer, player_controls::PlayerControls, sidebar::Sidebar,
@@ -50,6 +51,15 @@ pub struct LoopRepeatRegion(pub Signal<bool>);
 pub struct TimelineView(pub Signal<bool>);
 
 #[derive(Clone, Copy)]
+pub struct ShowHoverCursor(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct SidebarCollapsed(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
+pub struct LoopDragging(pub Signal<bool>);
+
+#[derive(Clone, Copy)]
 pub struct ShowBeatGrid(pub Signal<bool>);
 
 #[derive(Clone, Copy)]
@@ -71,7 +81,6 @@ pub struct PlaybackUIState {
     pub preserve_pitch: Signal<bool>,
 
     pub metadata: Signal<Option<TrackMetadata>>,
-    pub waveform_peaks: Signal<Vec<f32>>,
 
     pub(crate) bpm: Signal<f32>,
     pub(crate) key_name: Signal<String>,
@@ -130,6 +139,9 @@ pub fn RootLayout() -> Element {
     let mut timeline_progress_view = use_signal(|| ctx.config.read().ui.timeline_progress_view);
     let mut show_beat_grid = use_signal(|| ctx.config.read().ui.show_beat_grid);
     let mut beat_grid_snap = use_signal(|| ctx.config.read().ui.beat_grid_snap);
+    let mut show_hover_cursor = use_signal(|| ctx.config.read().ui.show_hover_cursor);
+    let mut sidebar_collapsed = use_signal(|| ctx.config.read().ui.sidebar_collapsed);
+    let loop_dragging = use_signal(|| false);
 
     use_context_provider(|| TimelineCursorFollowsLoop(cursor_follows_loop));
     use_context_provider(|| ShowTimeMarkers(show_time_markers));
@@ -137,6 +149,9 @@ pub fn RootLayout() -> Element {
     use_context_provider(|| TimelineView(timeline_progress_view));
     use_context_provider(|| ShowBeatGrid(show_beat_grid));
     use_context_provider(|| BeatGridSnap(beat_grid_snap));
+    use_context_provider(|| ShowHoverCursor(show_hover_cursor));
+    use_context_provider(|| SidebarCollapsed(sidebar_collapsed));
+    use_context_provider(|| LoopDragging(loop_dragging));
 
     // Эти настройки доступны всем дочерним компонентам, включая Settings и Waveform.
     use_context_provider(|| show_beat_grid);
@@ -202,7 +217,6 @@ pub fn RootLayout() -> Element {
     let is_playing = use_signal(|| false);
 
     let metadata = use_signal(|| None::<TrackMetadata>);
-    let waveform_peaks = use_signal(|| vec![0.0_f32; 500]);
 
     let bpm = use_signal(|| 0.0_f32);
     let key_name = use_signal(|| "—".to_string());
@@ -226,7 +240,6 @@ pub fn RootLayout() -> Element {
         speed,
         preserve_pitch,
         metadata,
-        waveform_peaks,
         bpm,
         key_name,
         key_numerical,
@@ -324,6 +337,8 @@ pub fn RootLayout() -> Element {
                         timeline_progress_view.set(config.ui.timeline_progress_view);
                         show_beat_grid.set(config.ui.show_beat_grid);
                         beat_grid_snap.set(config.ui.beat_grid_snap);
+                        show_hover_cursor.set(config.ui.show_hover_cursor);
+                        sidebar_collapsed.set(config.ui.sidebar_collapsed);
 
                         // Синхронизируем UI-состояние аудионастроек с конфигурацией.
                         speed.set(config.audio.speed.clamp(0.25, 2.0));
@@ -354,6 +369,38 @@ pub fn RootLayout() -> Element {
         }
     });
 
+    // Hooks must run on the component render, not inside `use_future`.
+    #[cfg(feature = "desktop")]
+    let open_navigator = use_navigator();
+    #[cfg(feature = "desktop")]
+    let open_window = use_window();
+
+    #[cfg(feature = "desktop")]
+    use_future(move || {
+        let open_rx = ctx.open_request_rx.read().clone();
+        let navigator = open_navigator;
+        let window = open_window.clone();
+        let command_tx = ctx.command_tx;
+
+        async move {
+            while let Ok(path) = open_rx.recv_async().await {
+                if !crate::desktop_lifecycle::is_supported_audio_path(&path) {
+                    continue;
+                }
+
+                navigator.push(Route::Home);
+
+                let _ = command_tx
+                    .read()
+                    .send(PlayerCommand::LoadFile(path.to_string_lossy().into_owned()));
+
+                window.set_visible(true);
+                window.set_minimized(false);
+                window.set_focus();
+            }
+        }
+    });
+
     use_future(move || {
         let mut status_rx = ctx.status_rx.read().clone();
 
@@ -362,7 +409,6 @@ pub fn RootLayout() -> Element {
         let mut has_track = has_track;
         let mut is_playing = is_playing;
         let mut metadata = metadata;
-        let mut waveform_peaks = waveform_peaks;
 
         let mut bpm = bpm;
         let mut key_name = key_name;
@@ -378,20 +424,15 @@ pub fn RootLayout() -> Element {
                         duration,
                         metadata: track_metadata,
                     } => {
-                        let saved_grid = ctx
-                            .config
-                            .read()
-                            .ui
-                            .manual_grids
-                            .get(&track_metadata.track_path)
-                            .cloned();
+                        let track_path = track_metadata.track_path.clone();
+                        let saved_grid =
+                            ctx.config.read().ui.manual_grids.get(&track_path).cloned();
 
                         position_secs.set(0.0);
                         duration_secs.set(duration.as_secs_f32());
                         has_track.set(true);
                         is_playing.set(true);
                         metadata.set(Some(track_metadata));
-                        waveform_peaks.set(vec![0.0_f32; 500]);
 
                         bpm.set(0.0);
                         key_name.set("—".to_string());
@@ -399,6 +440,15 @@ pub fn RootLayout() -> Element {
                         beat_grid.set(None);
                         grid_anchor.set(saved_grid.as_ref().and_then(|grid| grid.anchor));
                         grid_tempo.set(saved_grid.as_ref().and_then(|grid| grid.tempo));
+
+                        if let Some(tempo) = saved_grid.as_ref().and_then(|grid| grid.tempo) {
+                            if let Some(bpm) = crate::gui::components::bpm_key::rounded_bpm(tempo) {
+                                let _ = ctx.store_cmd_tx.read().send(StoreCommand::SetTrackBpm {
+                                    path: PathBuf::from(&track_path),
+                                    bpm,
+                                });
+                            }
+                        }
                     }
 
                     PlayerEvent::Paused => {
@@ -412,26 +462,6 @@ pub fn RootLayout() -> Element {
                     PlayerEvent::Finished => {
                         is_playing.set(false);
                         position_secs.set(0.0);
-                    }
-
-                    PlayerEvent::WaveformChunkReady {
-                        chunk,
-                        start_bin,
-                        total_bins,
-                    } => {
-                        if waveform_peaks.read().len() != total_bins {
-                            waveform_peaks.set(vec![0.0_f32; total_bins]);
-                        }
-
-                        waveform_peaks.with_mut(|peaks| {
-                            for (index, value) in chunk.into_iter().enumerate() {
-                                let target_index = start_bin + index;
-
-                                if let Some(peak) = peaks.get_mut(target_index) {
-                                    *peak = value;
-                                }
-                            }
-                        });
                     }
 
                     PlayerEvent::AnalysisCleared => {

@@ -7,6 +7,9 @@ use std::path::Path;
 /// Версия приложения, берётся автоматически из `package.version` в Cargo.toml.
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Audio extensions accepted by the file picker and desktop open requests.
+pub const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "flac", "ogg", "m4a", "aac"];
+
 /// Build number injected by CI through `WAVE_PLAYER_BUILD`.
 pub const APP_BUILD: Option<&str> = option_env!("WAVE_PLAYER_BUILD");
 

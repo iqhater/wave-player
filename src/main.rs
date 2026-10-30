@@ -12,6 +12,8 @@
     pnpm build:css && dx serve --android
 */
 mod backend;
+#[cfg(feature = "desktop")]
+mod desktop_lifecycle;
 mod gui;
 mod shared;
 mod updater;
@@ -57,6 +59,10 @@ pub struct PlayerContext {
     // Store communication channel
     store_cmd_tx: GenerationalBox<flume::Sender<StoreCommand>, SyncStorage>,
     store_event_rx: GenerationalBox<BroadcastReceiver<StoreEvent>, SyncStorage>,
+
+    // Desktop open-with requests (empty channel on other platforms).
+    #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
+    open_request_rx: GenerationalBox<flume::Receiver<PathBuf>, SyncStorage>,
 
     // In-app updater
     update_cmd_tx: GenerationalBox<flume::Sender<UpdateCommand>, SyncStorage>,
@@ -154,6 +160,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // init app config
     let portable_root = portable_root();
     let data_dir = app_data_dir(portable_root.as_deref());
+
+    #[cfg(feature = "desktop")]
+    let mut initial_open = desktop_lifecycle::first_audio_file_arg(std::env::args_os());
+
+    #[cfg(feature = "desktop")]
+    let (_instance_lock, start_watcher) = match desktop_lifecycle::acquire_instance_lock(&data_dir)
+    {
+        desktop_lifecycle::InstanceLockState::Acquired(lock) => (Some(lock), true),
+        desktop_lifecycle::InstanceLockState::AlreadyRunning => {
+            if let Some(path) = initial_open.take() {
+                match desktop_lifecycle::write_open_request(&data_dir, &path) {
+                    Ok(()) => return Ok(()),
+                    Err(error) => {
+                        eprintln!("failed to forward open request: {error}");
+                        initial_open = Some(path);
+                    }
+                }
+            } else {
+                return Ok(());
+            }
+
+            (None, false)
+        }
+        desktop_lifecycle::InstanceLockState::Unavailable(error) => {
+            eprintln!("single-instance lock unavailable: {error}");
+            (None, true)
+        }
+    };
+
+    #[cfg(not(feature = "desktop"))]
+    let start_watcher = false;
+
+    let (open_tx, open_rx) = flume::unbounded::<PathBuf>();
+
+    #[cfg(feature = "desktop")]
+    {
+        if let Some(path) = initial_open.take() {
+            let _ = open_tx.send(path);
+        }
+
+        if start_watcher {
+            desktop_lifecycle::spawn_open_request_watcher(data_dir.clone(), open_tx.clone());
+        }
+    }
+
+    #[cfg(not(feature = "desktop"))]
+    {
+        let _ = (open_tx, start_watcher);
+    }
+
     let config_store = ConfigStore::new(data_dir.join("config.json"));
     let config = config_store.load_with_default();
 
@@ -249,6 +305,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // store channels
         store_cmd_tx: owner.insert(store_tx),
         store_event_rx: owner.insert(store_broadcast_rx),
+
+        open_request_rx: owner.insert(open_rx),
 
         // in-app updater
         update_cmd_tx: owner.insert(update_cmd_tx),

@@ -1,6 +1,9 @@
 use crate::PlayerContext;
 use crate::shared::command_types::PlayerCommand;
 
+#[cfg(not(target_os = "android"))]
+use crate::shared::SUPPORTED_AUDIO_EXTENSIONS;
+
 #[cfg(target_os = "android")]
 use dioxus::html::{FileData, HasFileData};
 
@@ -50,10 +53,7 @@ pub fn OpenFile(compact: bool) -> Element {
                onclick: move |_| {
                    spawn(async move {
                        if let Some(path) = rfd::AsyncFileDialog::new()
-                           .add_filter(
-                               "Audio",
-                               &["mp3", "wav", "flac", "ogg", "m4a", "aac"],
-                           )
+                           .add_filter("Audio", SUPPORTED_AUDIO_EXTENSIONS)
                            .set_title("Select audio file")
                            .pick_file()
                            .await
