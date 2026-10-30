@@ -1,0 +1,110 @@
+schema: spec-driven
+
+context: |
+  Language:
+  - Write OpenSpec artifacts in Russian by default. Follow the repository's established documentation language when appropriate.
+  - Keep code identifiers, API names, CLI commands, paths, and standard technical terms unchanged.
+  - Treat the existing repository style as the source of truth for code and comments.
+
+  Project:
+  - Product: a desktop music player and audio playground for loop-based listening, real-time audio processing, track analysis, and exporting selected regions.
+  - Stack: Rust 2024, Dioxus 0.7, rodio 0.22, rusqlite/SQLite, timestretch, stratum-dsp, ebur128, tokio, flume, async-broadcast. Confirm actual dependencies and versions from Cargo.toml.
+  - Windows is the primary release target; macOS and Linux builds are experimental; Android is experimental.
+  - Architecture: UI <-> PlayerCommand/PlayerEvent for the audio engine; UI <-> StoreCommand/StoreEvent for the store thread. The store thread owns SQLite, config.json, and caches. Keep the UI and audio backend separated.
+  - Keep audio-engine state consistent across UI operations: playback, seeking, looping, speed, filters, spatial settings, and export.
+  - Protect the real-time audio path: avoid blocking I/O and unpredictable work in time-critical code. Keep real-time and offline processing behavior consistent.
+  - Consider audio formats, sample rates, channel layouts, playback boundaries, repeat behavior, and platform differences where relevant.
+
+  Compatibility and data:
+  - Preserve existing public interfaces, config.json fields, SQLite data, and cache formats unless the change explicitly requires otherwise.
+  - New config.json fields must be backward compatible: provide default values and serde defaults so old files load without errors.
+  - SQLite schema changes must use append-only migrations; never edit an already applied migration.
+  - Preserve user data, favorites, recent tracks, manual grid overrides, window geometry, and audio settings unless the change explicitly requires migration.
+  - Identify breaking changes and migration steps explicitly.
+
+  UI state:
+  - State that must survive navigation, track changes, or application restart belongs in AppConfig or a persistent layout-level signal (PlaybackUIState/RootLayout), not in a component-local signal that is destroyed on route changes.
+  - After a component remount, restore state from the persistent source and re-request any snapshot it needs; do not rely on having received an event in that component instance.
+  - High-frequency analysis or playback updates must not re-render the whole player tree at event frequency. Coalesce them or isolate them to the component that consumes them.
+
+  Quality:
+  - Treat the repository as the source of truth. Inspect relevant code, tests, configuration, CI, and documentation before proposing or implementing changes.
+  - Prefer the smallest complete solution. Avoid unrelated refactoring, speculative abstractions, unnecessary dependencies, and scope expansion.
+  - Prefer clear boundaries, explicit contracts, and simple designs over clever or prematurely generalized solutions.
+  - Distinguish observable behavior from implementation details. Make requirements verifiable and state material assumptions explicitly.
+  - Consider error handling, edge cases, security, data integrity, performance, and platform differences.
+  - Do not make commits, push changes, create tags, or perform destructive operations unless explicitly requested.
+  - Report only work and verification actually performed. Clearly distinguish passing checks, failed checks, skipped checks, and unresolved issues.
+
+  Testing policy:
+  - Unit tests:
+    - Write unit tests wherever it is appropriate and technically possible: pure functions, parsers, coordinate and geometry math, state transitions, validation, config serialization, and SQL operations against in-memory SQLite.
+    - Minimum line coverage for new or materially changed logic is 90%; target 95% where practical. Do not count Dioxus render trees, platform-only glue, code that requires a real audio device or WebView, and generated code.
+    - A repository-wide coverage percentage is not a gate for unrelated changes. Measure coverage for the changed modules when tooling is available and report the command and result.
+    - Every fixed bug that can be reproduced without GUI automation must get a regression test that fails before the fix.
+  - Integration tests:
+    - Add integration tests when a change crosses a module boundary: StoreCommand/StoreEvent flows, SQLite migrations and persistence, config.json load/save/backward compatibility, audio command dispatch, loop/speed/filter state, and cache read/write.
+    - Use in-memory SQLite, temporary directories, and generated WAV fixtures. Never depend on the user's real library, a real audio device, or the network.
+    - Keep integration tests deterministic and platform-independent unless the behavior is explicitly platform-specific.
+  - Mutation tests:
+    - Do not run mutation testing by default; it is slow and must not dominate agent work.
+    - Run cargo-mutants only for new features or substantially rewritten pure-logic modules, scoped to the files changed by the current change.
+    - Time-box a mutation run to 5 minutes at most, use parallelism and a per-mutant timeout; if it exceeds the budget, stop and record what was not checked.
+    - Never run mutation testing on the whole repository and never for a bug-fix-only change that introduces no new logic.
+  - End-to-end tests:
+    - Automated e2e and UI-automation tests are not used in this project. Do not add them unless a future explicit change requests a harness.
+    - Cover module boundaries with integration tests and add a short manual smoke checklist for UI interactions that require the WebView or a real audio device.
+  - Verification:
+    - Inspect Taskfile.yml, CI, and README for the actual commands. Prefer cargo fmt --check, cargo check --all-targets --features desktop, cargo test --locked --features desktop, and node --test tests/beat_grid.test.cjs unless the change requires a different command.
+    - Run targeted tests first, then the broader suite. Do not claim a check passed unless it was actually executed successfully.
+    - Do not add new CI jobs or tools in an unrelated change; CI changes are a separate explicit change.
+
+rules:
+  proposal:
+    - Explain the problem, desired outcome, scope, and explicit non-goals.
+    - Reference bug-report items by number when the change fixes a reported batch, and list each fix separately.
+    - Keep the proposal concise and identify material risks, compatibility concerns, and assumptions.
+    - State which storage or data formats change and whether a migration is required.
+
+  specs:
+    - Describe observable, testable behavior rather than prescribing internal implementation unnecessarily.
+    - "For each requirement, state how it is verified: unit test, integration test, or manual smoke check. If automated verification is not possible, explain why."
+    - Cover normal operation, important edge cases, validation, failure behavior, and backward compatibility where relevant.
+    - State important invariants and clarify what must remain unchanged.
+    - For UI state, state explicitly whether it must survive route changes, track changes, and application restart.
+    - Do not specify automated e2e tests; use unit and integration tests plus manual smoke checks instead.
+
+  design:
+    - Ground the design in the actual repository structure and existing architecture.
+    - Explain affected components, interfaces, data flow, state changes, error handling, and platform differences where relevant.
+    - For fixes, describe the root cause, not only the symptom.
+    - Describe alternatives and trade-offs when they materially influence the design.
+    - Include a test plan that maps unit and integration tests to the requirements and explains why the coverage is sufficient.
+    - Keep the design small enough to implement without unrelated refactoring.
+
+  tasks:
+    - Break implementation into small, ordered, actionable tasks with clear completion criteria.
+    - Include unit and integration tests as explicit tasks, including the verification command and expected result.
+    - Include mutation testing only for new features or substantially rewritten logic and mark it as optional and time-boxed with a 5-minute budget.
+    - Do not add e2e tasks.
+    - Include documentation, config migrations, and data migrations where needed.
+    - Keep tasks traceable to the requirements and technical design.
+
+operations:
+  apply:
+    guidance:
+      - Inspect the affected implementation, tests, configuration, and documentation before editing.
+      - Follow existing project conventions unless the change explicitly requires a different approach.
+      - Update task checkboxes as work progresses; mark a task complete only after its implementation and applicable verification are finished.
+      - Run targeted tests for changed modules first, then the broader suite; inspect Taskfile.yml and CI for the actual commands instead of guessing.
+      - Measure coverage for new or changed logic when tooling is available; do not block the change on a repository-wide percentage.
+      - Run mutation testing only when the change adds a new feature or substantially rewrites logic, and keep it within the 5-minute budget.
+      - If implementation reveals a material specification conflict or a need to expand scope, reconcile the OpenSpec artifacts before proceeding.
+      - Do not claim that tests or checks passed unless they were actually executed successfully.
+
+  archive:
+    guidance:
+      - Ensure the archived specifications accurately reflect the delivered behavior.
+      - Summarize what changed, which checks were run, and the coverage or mutation results, or state that they were not run.
+      - Include manual smoke results for UI interactions that cannot be automated.
+      - Record unresolved follow-up work explicitly rather than treating incomplete work as finished.
