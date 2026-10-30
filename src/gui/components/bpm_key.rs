@@ -1,14 +1,26 @@
 use super::beat_grid::resolved_grid_tempo;
 use crate::PlayerContext;
 use crate::gui::layout::{PlaybackUIState, ShowBeatGrid};
+use crate::shared::command_types::StoreCommand;
 use crate::shared::store_types::ManualGrid;
 use dioxus::prelude::*;
+use std::path::PathBuf;
 
 const MIN_GRID_BPM: f32 = 20.0;
 const MAX_GRID_BPM: f32 = 300.0;
 
 fn format_bpm(bpm: f32) -> String {
-    format!("{:.0}", bpm.round())
+    let value = rounded_bpm(bpm).unwrap_or(bpm);
+    format!("{value:.0}")
+}
+
+/// Rounds a BPM to the integer value used both by the display and the library.
+pub(crate) fn rounded_bpm(bpm: f32) -> Option<f32> {
+    if bpm.is_finite() && (MIN_GRID_BPM..=MAX_GRID_BPM).contains(&bpm) {
+        Some(bpm.round())
+    } else {
+        None
+    }
 }
 
 fn parse_bpm(text: &str) -> Option<f32> {
@@ -17,14 +29,45 @@ fn parse_bpm(text: &str) -> Option<f32> {
     (bpm.is_finite() && (MIN_GRID_BPM..=MAX_GRID_BPM).contains(&bpm)).then_some(bpm)
 }
 
-fn apply_bpm_draft(mut draft: Signal<Option<String>>, mut manual: Signal<Option<f32>>) {
-    if let Some(text) = draft() {
-        if let Some(bpm) = parse_bpm(&text) {
-            manual.set(Some(bpm));
-        }
-    }
+fn persist_track_bpm(ctx: &PlayerContext, track_path: Option<String>, bpm: f32) {
+    let Some(path) = track_path else {
+        return;
+    };
+    let Some(bpm) = rounded_bpm(bpm) else {
+        return;
+    };
 
+    let _ = ctx.store_cmd_tx.read().send(StoreCommand::SetTrackBpm {
+        path: PathBuf::from(path),
+        bpm,
+    });
+}
+
+fn commit_bpm(
+    ctx: &PlayerContext,
+    track_path: Option<String>,
+    mut draft: Signal<Option<String>>,
+    mut grid_tempo: Signal<Option<f32>>,
+    grid_anchor: Signal<Option<f32>>,
+) {
+    let entered = committed_bpm(draft().as_deref(), grid_tempo());
     draft.set(None);
+
+    let Some(entered) = entered else {
+        return;
+    };
+
+    grid_tempo.set(Some(entered));
+    persist_grid_override(ctx, track_path.clone(), Some(entered), grid_anchor());
+    persist_track_bpm(ctx, track_path, entered);
+}
+
+/// Returns the parsed value only when it is valid and actually changes the
+/// current manual tempo. This keeps blur + change from writing twice.
+fn committed_bpm(draft: Option<&str>, current: Option<f32>) -> Option<f32> {
+    let entered = draft.and_then(parse_bpm)?;
+
+    (current != Some(entered)).then_some(entered)
 }
 
 fn persist_grid_override(
@@ -75,6 +118,15 @@ pub fn BpmKey() -> Element {
         persist_grid_override(&ctx, track_path, grid_tempo(), grid_anchor());
     };
 
+    let commit_current_bpm = move || {
+        let track_path = metadata
+            .read()
+            .as_ref()
+            .map(|track| track.track_path.clone());
+
+        commit_bpm(&ctx, track_path, tempo_draft, grid_tempo, grid_anchor);
+    };
+
     let has_grid = move || show_grid() && bpm() > 0.0 && beat_grid().is_some();
     let is_synced = move || grid_anchor().is_some();
 
@@ -101,6 +153,23 @@ pub fn BpmKey() -> Element {
         e.prevent_default();
         grid_anchor.set(None);
         persist_current_grid();
+    };
+
+    let reset_bpm = move |e: MouseEvent| {
+        e.prevent_default();
+
+        let track_path = metadata
+            .read()
+            .as_ref()
+            .map(|track| track.track_path.clone());
+
+        tempo_draft.set(None);
+        grid_tempo.set(None);
+        persist_grid_override(&ctx, track_path.clone(), None, grid_anchor());
+
+        if bpm() > 0.0 {
+            persist_track_bpm(&ctx, track_path, bpm());
+        }
     };
 
     let camelot = move || {
@@ -146,29 +215,18 @@ pub fn BpmKey() -> Element {
                         onfocus: move |_| tempo_focused.set(true),
                         onblur: move |_| {
                             tempo_focused.set(false);
-                            apply_bpm_draft(tempo_draft, grid_tempo);
+                            commit_current_bpm();
                         },
                         oninput: move |e| tempo_draft.set(Some(e.value())),
-                        onchange: move |_| {
-                            apply_bpm_draft(tempo_draft, grid_tempo);
-                            persist_current_grid();
-                        },
+                        onchange: move |_| commit_current_bpm(),
                         onkeydown: move |e| {
                             match e.key() {
-                                Key::Enter => {
-                                    apply_bpm_draft(tempo_draft, grid_tempo);
-                                    persist_current_grid();
-                                }
+                                Key::Enter => commit_current_bpm(),
                                 Key::Escape => tempo_draft.set(None),
                                 _ => {}
                             }
                         },
-                        oncontextmenu: move |e| {
-                            e.prevent_default();
-                            tempo_draft.set(None);
-                            grid_tempo.set(None);
-                            persist_current_grid();
-                        },
+                        oncontextmenu: reset_bpm,
                     }
                 } else {
                     span { class: "w-14 border border-transparent px-1 text-2xl font-bold text-primary lg:text-xl", "—" }
@@ -206,5 +264,29 @@ mod bpm_input_tests {
         assert_eq!(parse_bpm("fast"), None);
         assert_eq!(parse_bpm("10"), None);
         assert_eq!(parse_bpm("400"), None);
+    }
+
+    #[test]
+    fn rounded_bpm_should_match_the_display_rounding() {
+        assert_eq!(super::rounded_bpm(127.4), Some(127.0));
+        assert_eq!(super::rounded_bpm(127.6), Some(128.0));
+        assert_eq!(super::rounded_bpm(20.0), Some(20.0));
+        assert_eq!(super::rounded_bpm(300.0), Some(300.0));
+    }
+
+    #[test]
+    fn rounded_bpm_should_reject_out_of_range_and_non_finite_values() {
+        assert_eq!(super::rounded_bpm(19.9), None);
+        assert_eq!(super::rounded_bpm(300.1), None);
+        assert_eq!(super::rounded_bpm(f32::NAN), None);
+        assert_eq!(super::rounded_bpm(f32::INFINITY), None);
+    }
+
+    #[test]
+    fn committed_bpm_should_only_accept_a_changed_valid_value() {
+        assert_eq!(super::committed_bpm(Some("127.4"), None), Some(127.4));
+        assert_eq!(super::committed_bpm(Some("127.4"), Some(127.4)), None);
+        assert_eq!(super::committed_bpm(Some("fast"), Some(120.0)), None);
+        assert_eq!(super::committed_bpm(None, Some(120.0)), None);
     }
 }

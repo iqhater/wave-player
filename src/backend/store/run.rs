@@ -26,14 +26,25 @@ pub fn run_store_loop(
         };
         let cache = CacheStore::new(data_dir.join("cache"));
 
+        // Keep the config in memory so analysis updates can honor manual BPM
+        // overrides without racing an asynchronous config file write.
+        let mut current_config = app_config.load();
+
         // При старте сразу отдаём настройки в UI
         let _ = store_tx.try_broadcast(StoreEvent::ConfigLoaded {
-            config: app_config.load(),
+            config: current_config.clone(),
         });
 
         while let Ok(command) = store_rx.recv() {
             // run store commands
-            dispatch::dispatch(&mut db, &app_config, &cache, &store_tx, command);
+            dispatch::dispatch(
+                &mut db,
+                &app_config,
+                &mut current_config,
+                &cache,
+                &store_tx,
+                command,
+            );
         }
     });
     Ok(())

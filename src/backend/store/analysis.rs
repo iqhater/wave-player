@@ -1,5 +1,6 @@
 use super::db::DbStore;
 use crate::shared::command_types::CachedTrackAnalysis;
+use crate::shared::store_types::AppConfig;
 use rusqlite::OptionalExtension;
 use std::path::Path;
 use std::path::PathBuf;
@@ -17,6 +18,28 @@ impl DbStore {
                      key = ?2
                  WHERE path = ?3",
             rusqlite::params![bpm, key, path.to_string_lossy().as_ref()],
+        )?;
+
+        Ok(updated > 0)
+    }
+
+    pub fn update_track_bpm(&mut self, path: &Path, bpm: f32) -> rusqlite::Result<bool> {
+        let updated = self.conn.execute(
+            "UPDATE tracks
+                 SET bpm = ?1
+                 WHERE path = ?2",
+            rusqlite::params![bpm, path.to_string_lossy().as_ref()],
+        )?;
+
+        Ok(updated > 0)
+    }
+
+    pub fn update_track_key(&mut self, path: &Path, key: &str) -> rusqlite::Result<bool> {
+        let updated = self.conn.execute(
+            "UPDATE tracks
+                 SET key = ?1
+                 WHERE path = ?2",
+            rusqlite::params![key, path.to_string_lossy().as_ref()],
         )?;
 
         Ok(updated > 0)
@@ -101,5 +124,63 @@ impl DbStore {
         )?;
 
         transaction.commit()
+    }
+}
+
+/// A manually edited BPM wins over the value produced by a later analysis run.
+pub(crate) fn should_apply_detected_bpm(config: &AppConfig, path: &Path) -> bool {
+    let path = path.to_string_lossy();
+
+    config
+        .ui
+        .manual_grids
+        .get(path.as_ref())
+        .and_then(|grid| grid.tempo)
+        .is_none()
+}
+
+#[cfg(test)]
+mod analysis_tests {
+    use super::should_apply_detected_bpm;
+    use crate::shared::store_types::{AppConfig, ManualGrid};
+    use std::path::Path;
+
+    #[test]
+    fn detected_bpm_should_be_applied_without_a_manual_tempo() {
+        let config = AppConfig::default();
+
+        assert!(should_apply_detected_bpm(&config, Path::new("music/a.wav")));
+    }
+
+    #[test]
+    fn manual_tempo_should_block_detected_bpm() {
+        let mut config = AppConfig::default();
+        config.ui.manual_grids.insert(
+            "music/a.wav".to_string(),
+            ManualGrid {
+                tempo: Some(128.0),
+                anchor: None,
+            },
+        );
+
+        assert!(!should_apply_detected_bpm(
+            &config,
+            Path::new("music/a.wav")
+        ));
+        assert!(should_apply_detected_bpm(&config, Path::new("music/b.wav")));
+    }
+
+    #[test]
+    fn anchor_only_override_should_not_block_detected_bpm() {
+        let mut config = AppConfig::default();
+        config.ui.manual_grids.insert(
+            "music/a.wav".to_string(),
+            ManualGrid {
+                tempo: None,
+                anchor: Some(12.5),
+            },
+        );
+
+        assert!(should_apply_detected_bpm(&config, Path::new("music/a.wav")));
     }
 }

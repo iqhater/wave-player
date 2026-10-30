@@ -155,4 +155,80 @@ mod tests {
         assert_eq!(stored.data, None);
         assert_eq!((bpm, key), (None, None));
     }
+
+    #[test]
+    fn update_track_bpm_should_store_the_value_for_an_existing_track() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+
+        let mut db = DbStore { conn };
+
+        db.conn
+            .execute(
+                "INSERT INTO tracks (path, file_size, duration)
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params!["music/track.wav", 100, 1000],
+            )
+            .unwrap();
+
+        let track = std::path::Path::new("music/track.wav");
+
+        assert!(db.update_track_bpm(track, 128.0).unwrap());
+
+        let bpm: Option<f32> = db
+            .conn
+            .query_row(
+                "SELECT bpm FROM tracks WHERE path = ?1",
+                ["music/track.wav"],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(bpm, Some(128.0));
+    }
+
+    #[test]
+    fn update_track_bpm_should_report_a_missing_track() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+
+        let mut db = DbStore { conn };
+
+        assert!(
+            !db.update_track_bpm(std::path::Path::new("music/missing.wav"), 128.0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn update_track_key_should_not_change_the_bpm() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+
+        let mut db = DbStore { conn };
+
+        db.conn
+            .execute(
+                "INSERT INTO tracks (path, file_size, duration, bpm)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params!["music/track.wav", 100, 1000, 128.0],
+            )
+            .unwrap();
+
+        let track = std::path::Path::new("music/track.wav");
+
+        assert!(db.update_track_key(track, "Am").unwrap());
+
+        let (bpm, key): (Option<f32>, Option<String>) = db
+            .conn
+            .query_row(
+                "SELECT bpm, key FROM tracks WHERE path = ?1",
+                ["music/track.wav"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(bpm, Some(128.0));
+        assert_eq!(key.as_deref(), Some("Am"));
+    }
 }

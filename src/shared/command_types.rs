@@ -91,6 +91,12 @@ pub enum StoreCommand {
         key: String,
     },
 
+    /// Сохранить ручной BPM трека в библиотеке.
+    SetTrackBpm {
+        path: PathBuf,
+        bpm: f32,
+    },
+
     /// Изменить настройку приложения.
     SetConfig(AppConfig),
     /// Запросить снапшот (при старте UI).
