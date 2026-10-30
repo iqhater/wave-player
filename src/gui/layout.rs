@@ -4,7 +4,10 @@ use dioxus::prelude::*;
 use std::path::PathBuf;
 
 use super::components::{
-    errors_toast::ErrorsToast, footer::Footer, player_controls::PlayerControls, sidebar::Sidebar,
+    errors_toast::ErrorsToast,
+    footer::Footer,
+    player_controls::{PlayerControls, accepted_integrated_lufs},
+    sidebar::Sidebar,
     theme_toggle::ThemeToggle,
 };
 use crate::backend::metadata::TrackMetadata;
@@ -86,6 +89,8 @@ pub struct PlaybackUIState {
     pub(crate) key_name: Signal<String>,
     pub(crate) key_numerical: Signal<String>,
     pub(crate) beat_grid: Signal<Option<BeatGridData>>,
+    /// Integrated LUFS of the current track; session-only layout state.
+    pub(crate) integrated_lufs: Signal<Option<f32>>,
     /// Time that must stay on a beat line after manual grid sync.
     pub(crate) grid_anchor: Signal<Option<f32>>,
     /// Manual grid tempo override; `None` means the analysis tempo is used.
@@ -224,6 +229,7 @@ pub fn RootLayout() -> Element {
     let beat_grid = use_signal(|| None::<BeatGridData>);
     let grid_anchor = use_signal(|| None::<f32>);
     let grid_tempo = use_signal(|| None::<f32>);
+    let integrated_lufs = use_signal(|| None::<f32>);
 
     let loop_start = use_signal(|| 0.0_f32);
     let loop_end = use_signal(|| 0.0_f32);
@@ -246,6 +252,7 @@ pub fn RootLayout() -> Element {
         beat_grid,
         grid_anchor,
         grid_tempo,
+        integrated_lufs,
     });
 
     use_context_provider(|| LoopUIState {
@@ -416,6 +423,7 @@ pub fn RootLayout() -> Element {
         let mut beat_grid = beat_grid;
         let mut grid_anchor = grid_anchor;
         let mut grid_tempo = grid_tempo;
+        let mut integrated_lufs = integrated_lufs;
 
         async move {
             while let Some(event) = status_rx.next().await {
@@ -440,6 +448,7 @@ pub fn RootLayout() -> Element {
                         beat_grid.set(None);
                         grid_anchor.set(saved_grid.as_ref().and_then(|grid| grid.anchor));
                         grid_tempo.set(saved_grid.as_ref().and_then(|grid| grid.tempo));
+                        integrated_lufs.set(None);
 
                         if let Some(tempo) = saved_grid.as_ref().and_then(|grid| grid.tempo) {
                             if let Some(bpm) = crate::gui::components::bpm_key::rounded_bpm(tempo) {
@@ -469,6 +478,15 @@ pub fn RootLayout() -> Element {
                         key_name.set("—".to_string());
                         key_numerical.set(String::new());
                         beat_grid.set(None);
+                        integrated_lufs.set(None);
+                    }
+
+                    PlayerEvent::LoudnessMeasured {
+                        integrated_lufs: measured_lufs,
+                        ..
+                    } => {
+                        integrated_lufs
+                            .set(accepted_integrated_lufs(integrated_lufs(), measured_lufs));
                     }
 
                     PlayerEvent::BpmKeyDetected {

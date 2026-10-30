@@ -629,35 +629,8 @@ fn VolumeControl() -> Element {
 
 #[component]
 fn LUFS() -> Element {
-    let ctx = use_context::<PlayerContext>();
-    let mut lufs = use_signal(|| None::<f32>);
-
-    use_future(move || {
-        let mut status_rx = ctx.status_rx.read().clone();
-
-        async move {
-            while let Some(event) = status_rx.next().await {
-                match event {
-                    PlayerEvent::Started { .. } => {
-                        lufs.set(None);
-                    }
-
-                    PlayerEvent::LoudnessMeasured {
-                        integrated_lufs, ..
-                    } => {
-                        if let Some(value) = integrated_lufs
-                            .filter(|value| value.is_finite())
-                            .filter(|value| (-60.0..=0.0).contains(value))
-                        {
-                            lufs.set(Some(value));
-                        }
-                    }
-
-                    _ => {}
-                }
-            }
-        }
-    });
+    let playback = use_context::<PlaybackUIState>();
+    let lufs = playback.integrated_lufs;
 
     rsx! {
         span {
@@ -669,5 +642,72 @@ fn LUFS() -> Element {
             }
         }
 
+    }
+}
+
+/// Keeps the last valid integrated loudness value when an event carries a
+/// missing or unusable measurement.
+pub(crate) fn accepted_integrated_lufs(current: Option<f32>, event: Option<f32>) -> Option<f32> {
+    match event {
+        Some(value) if value.is_finite() && (-60.0..=0.0).contains(&value) => Some(value),
+        _ => current,
+    }
+}
+
+#[cfg(test)]
+mod lufs_tests {
+    use super::accepted_integrated_lufs;
+
+    #[test]
+    fn valid_value_should_replace_the_current_one() {
+        assert_eq!(
+            accepted_integrated_lufs(Some(-18.0), Some(-14.0)),
+            Some(-14.0)
+        );
+        assert_eq!(accepted_integrated_lufs(None, Some(-14.0)), Some(-14.0));
+    }
+
+    #[test]
+    fn missing_or_out_of_range_value_should_keep_the_current_one() {
+        assert_eq!(accepted_integrated_lufs(Some(-14.0), None), Some(-14.0));
+        assert_eq!(
+            accepted_integrated_lufs(Some(-14.0), Some(-80.0)),
+            Some(-14.0)
+        );
+        assert_eq!(
+            accepted_integrated_lufs(Some(-14.0), Some(5.0)),
+            Some(-14.0)
+        );
+        assert_eq!(accepted_integrated_lufs(None, None), None);
+    }
+
+    #[test]
+    fn boundary_values_should_be_accepted() {
+        assert_eq!(accepted_integrated_lufs(None, Some(-60.0)), Some(-60.0));
+        assert_eq!(accepted_integrated_lufs(None, Some(0.0)), Some(0.0));
+    }
+
+    #[test]
+    fn non_finite_values_should_be_rejected() {
+        let current = Some(-14.0);
+
+        assert_eq!(accepted_integrated_lufs(current, Some(f32::NAN)), current);
+        assert_eq!(
+            accepted_integrated_lufs(current, Some(f32::INFINITY)),
+            current
+        );
+        assert_eq!(
+            accepted_integrated_lufs(current, Some(f32::NEG_INFINITY)),
+            current
+        );
+    }
+
+    #[test]
+    fn track_reset_then_measurement_should_restore_a_value() {
+        // `Started` clears the value; a later measurement fills it again.
+        let after_start = None;
+        let after_measurement = accepted_integrated_lufs(after_start, Some(-9.5));
+
+        assert_eq!(after_measurement, Some(-9.5));
     }
 }
