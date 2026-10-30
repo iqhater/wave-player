@@ -70,6 +70,9 @@ Screenshots from the Windows build:
   persistent settings, window geometry, and per-track analysis tools.
 - **Updates:** automatic checks from GitHub Releases with in-app download and
   restart (Windows portable builds first).
+- **Desktop integration:** open audio files from the file manager's *Open with…*
+  menu; a second launch hands the file to the running window instead of starting
+  another instance.
 - **Export:** export the loop region to WAV with speed and effects applied.
 - **Interface:** dark and light themes, responsive desktop/mobile layout, and
   bundled fonts and icons.
@@ -125,6 +128,23 @@ dx serve --platform desktop
 ```
 
 Android support is experimental: `pnpm build:css && dx serve --platform android`.
+
+## Opening audio files from the file manager
+
+On Windows and Linux, choosing Wave Player in the *Open with…* menu starts the
+app and immediately plays the selected track. If a window is already open, the
+file is handed to the running instance: the window is restored, focused, and
+switched to the player screen; the track starts there. Wave Player runs as a
+single instance per user, so launching it again without a file only brings the
+existing window forward.
+
+Only the first supported audio path from the command line is opened. Missing
+paths and unsupported extensions are ignored, so a failed handoff never blocks
+startup. The handoff uses `open_request.json` in the data directory.
+
+macOS is not covered yet: LaunchServices delivers files opened from Finder as
+Apple Events instead of argv, and Apple Events are not handled. Open files from
+Wave Player's own file picker on macOS.
 
 ## Building a release
 
@@ -196,6 +216,8 @@ The main goals are:
 - Changing pitch-preservation mode may rebuild the audio pipeline.
 - Cache/database recovery, audio device hot-swap, playlists, and crossfade are
   not implemented yet.
+- Opening files from Finder on macOS is not supported yet (LaunchServices uses
+  Apple Events, not argv).
 - In-app updates currently support Windows portable builds; macOS and Linux
   update paths are planned.
 
