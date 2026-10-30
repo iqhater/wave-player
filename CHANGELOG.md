@@ -11,6 +11,7 @@
 - *(bpm)* Persist manual tempo edits
 - *(loop)* Keep drag responsive during analysis
 - *(build)* Embed the wave player icon
+- *(lufs)* Keep loudness across screen changes
 
 ### 📚 Documentation
 
@@ -19,6 +20,8 @@
 ### ⚙️ Miscellaneous Tasks
 
 - *(openspec)* Archive the october bug batch
+- *(openspec)* Add project agent skills
+- *(openspec)* Archive lufs screen state fix
 ## [0.1.0-alpha.16] - 2026-10-27
 
 ### 🚀 Features
