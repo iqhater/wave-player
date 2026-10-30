@@ -1,6 +1,6 @@
 use super::super::layout::{
-    BeatGridSnap, LoopRepeatRegion, PlaybackUIState, ShowBeatGrid, ShowTimeMarkers,
-    TimelineCursorFollowsLoop, TimelineView,
+    BeatGridSnap, LoopRepeatRegion, PlaybackUIState, ShowBeatGrid, ShowHoverCursor,
+    ShowTimeMarkers, TimelineCursorFollowsLoop, TimelineView,
 };
 use crate::PlayerContext;
 use crate::shared::command_types::{PlayerCommand, StoreCommand};
@@ -38,6 +38,7 @@ pub fn Settings() -> Element {
 
     // Timeline & loop
     let mut is_cursor_checked = use_context::<TimelineCursorFollowsLoop>().0;
+    let mut is_hover_cursor_checked = use_context::<ShowHoverCursor>().0;
     let mut is_time_markers_checked = use_context::<ShowTimeMarkers>().0;
     let mut is_loop_enabled = use_context::<LoopRepeatRegion>().0;
     let mut is_standard_timeline_view = use_context::<TimelineView>().0;
@@ -76,6 +77,20 @@ pub fn Settings() -> Element {
 
                 div {
                     class: "flex flex-col gap-2",
+
+                    SettingsCheckbox {
+                        id: "show-hover-cursor",
+                        text: "Show the hover preview cursor on the waveform.",
+                        checked: is_hover_cursor_checked,
+                        onchange: move |_| {
+                            let enabled = !is_hover_cursor_checked();
+                            is_hover_cursor_checked.set(enabled);
+
+                            ctx.update_config(|config| {
+                                config.ui.show_hover_cursor = enabled;
+                            });
+                        },
+                    }
 
                     SettingsCheckbox {
                         id: "timeline-cursor-behavior",

@@ -1,5 +1,6 @@
 use super::open_file::OpenFile;
 use crate::PlayerContext;
+use crate::gui::layout::SidebarCollapsed;
 use crate::gui::layout::{MobileMenuOpen, UpdateUIState};
 use crate::gui::route::Route;
 use crate::updater::{UpdateCommand, UpdateInfo, UpdateState};
@@ -19,12 +20,13 @@ fn update_info(state: &UpdateState) -> Option<&UpdateInfo> {
 #[component]
 pub fn Sidebar() -> Element {
     let current_route = use_route::<Route>();
-    let mut collapsed = use_signal(|| false);
+    let mut collapsed = use_context::<SidebarCollapsed>().0;
     let ctx = use_context::<PlayerContext>();
     let update = use_context::<UpdateUIState>();
     let update_state = update.state;
     let mut dismissed_update_tag = update.dismissed_tag;
     let mut mobile_menu_open = use_context::<MobileMenuOpen>().0;
+    let compact = collapsed() && !mobile_menu_open();
 
     let current_update = update_state();
     let notice_info = update_info(&current_update).cloned();
@@ -33,7 +35,7 @@ pub fn Sidebar() -> Element {
         .is_some_and(|info| dismissed_update_tag().as_deref() != Some(info.tag.as_str()));
     let dismiss_tag = notice_info.as_ref().map(|info| info.tag.clone());
 
-    let aside_class = if collapsed() {
+    let aside_class = if compact {
         "fixed inset-0 z-50
          flex h-screen w-full flex-shrink-0 flex-col
          overflow-hidden bg-surface-container-high px-3 py-stack-lg
@@ -62,13 +64,13 @@ pub fn Sidebar() -> Element {
                 class: "h-20 flex-shrink-0 mb-stack-md flex flex-col justify-between",
 
                 div {
-                    class: if collapsed() {
+                    class: if compact {
                         "flex items-center justify-center"
                     } else {
                         "flex items-start justify-between gap-3"
                     },
 
-                    if collapsed() {
+                    if compact {
                         /* span {
                             class: "material-symbols-outlined text-primary text-[30px]",
                             title: "Wave Player",
@@ -93,7 +95,7 @@ pub fn Sidebar() -> Element {
                     }
 
                     button {
-                        class: if collapsed() {
+                        class: if compact {
                             "flex-shrink-0 w-10 h-10 flex items-center justify-center \
                              rounded-xl text-secondary hover:text-primary \
                              hover:bg-surface-container-low cursor-pointer \
@@ -122,11 +124,14 @@ pub fn Sidebar() -> Element {
                         },
 
                         onclick: move |_| {
-                            // collapsed.toggle();
                             if mobile_menu_open() {
                                 mobile_menu_open.set(false);
                             } else {
-                                collapsed.toggle();
+                                let next = !collapsed();
+                                collapsed.set(next);
+                                ctx.update_config(|config| {
+                                    config.ui.sidebar_collapsed = next;
+                                });
                             }
                         },
 
@@ -151,7 +156,7 @@ pub fn Sidebar() -> Element {
 
             // Menu Items
             nav {
-                class: if collapsed() {
+                class: if compact {
                     "flex flex-col gap-unit items-center"
                 } else {
                     "flex flex-col gap-unit"
@@ -162,7 +167,7 @@ pub fn Sidebar() -> Element {
                     icon: "play_circle",
                     label: "Player",
                     active: current_route == Route::Home,
-                    compact: collapsed(),
+                    compact: compact,
                 }
 
                 SidebarButton {
@@ -170,7 +175,7 @@ pub fn Sidebar() -> Element {
                     icon: "queue_music",
                     label: "Recent Tracks",
                     active: current_route == Route::RecentTracks,
-                    compact: collapsed(),
+                    compact: compact,
                 }
 
                 SidebarButton {
@@ -178,7 +183,7 @@ pub fn Sidebar() -> Element {
                     icon: "favorite",
                     label: "Favorites",
                     active: current_route == Route::Favorites,
-                    compact: collapsed(),
+                    compact: compact,
                 }
 
                 SidebarButton {
@@ -186,13 +191,13 @@ pub fn Sidebar() -> Element {
                     icon: "settings",
                     label: "Settings",
                     active: current_route == Route::Settings,
-                    compact: collapsed(),
+                    compact: compact,
                 }
             }
 
             // Dashed separator
             hr {
-                class: if collapsed() {
+                class: if compact {
                     "w-full mx-auto mt-4 border-t border-dashed border-outline-variant"
                 } else {
                     "w-1/2 mx-auto mt-4 border-t border-dashed border-outline-variant"
@@ -201,11 +206,11 @@ pub fn Sidebar() -> Element {
 
             // Open file button
             OpenFile {
-                compact: collapsed(),
+                compact: compact,
             }
 
             // Bottom update/app info block
-            if !collapsed() && show_update {
+            if !compact && show_update {
                 div {
                     class: "mt-auto w-[calc(100%-2rem)] max-w-[520px] mx-auto p-4
                             bg-primary rounded-2xl text-surface
@@ -371,7 +376,7 @@ pub fn Sidebar() -> Element {
                 }
             } else {
                 div {
-                    class: if collapsed() {
+                    class: if compact {
                         "mt-auto flex w-full justify-center"
                     } else {
                         "mt-auto w-full"
@@ -382,7 +387,7 @@ pub fn Sidebar() -> Element {
                         icon: "info",
                         label: "App Info",
                         active: current_route == Route::AppInfo,
-                        compact: collapsed(),
+                        compact: compact,
                     }
                 }
             }

@@ -141,6 +141,10 @@ pub struct UiConfig {
     pub timeline_progress_view: bool,
     pub show_beat_grid: bool,
     pub beat_grid_snap: bool,
+    /// Show the translucent hover preview cursor over the waveform.
+    pub show_hover_cursor: bool,
+    /// Collapsed state of the desktop sidebar.
+    pub sidebar_collapsed: bool,
     /// Per-track manual BPM and grid anchor overrides, keyed by track path.
     pub manual_grids: HashMap<String, ManualGrid>,
 }
@@ -154,6 +158,8 @@ impl Default for UiConfig {
             timeline_progress_view: false,
             show_beat_grid: true,
             beat_grid_snap: true,
+            show_hover_cursor: true,
+            sidebar_collapsed: false,
             manual_grids: HashMap::new(),
         }
     }
@@ -197,6 +203,8 @@ mod config_tests {
         config.ui.timeline_progress_view = true;
         config.ui.show_beat_grid = false;
         config.ui.beat_grid_snap = true;
+        config.ui.show_hover_cursor = false;
+        config.ui.sidebar_collapsed = true;
         config.ui.manual_grids.insert(
             "music/track.wav".to_string(),
             super::ManualGrid {
@@ -217,6 +225,8 @@ mod config_tests {
 
         assert_eq!(config.audio.preamp_db, 3.5);
         assert!(config.ui.manual_grids.is_empty());
+        assert!(config.ui.show_hover_cursor);
+        assert!(!config.ui.sidebar_collapsed);
     }
 
     #[test]
@@ -244,6 +254,8 @@ mod config_tests {
         assert_eq!(config.audio.speed, 1.25);
         assert_eq!(config.audio.preamp_db, 3.5);
         assert!(config.ui.manual_grids.is_empty());
+        assert!(config.ui.show_hover_cursor);
+        assert!(!config.ui.sidebar_collapsed);
     }
 
     #[test]
