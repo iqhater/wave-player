@@ -1,6 +1,6 @@
 [package]
 name = "wave_player"
-version = "0.1.0-alpha.16"
+version = "0.1.0-alpha.17"
 authors = ["iqhater <iqhater@yandex.ru>"]
 edition = "2024"
 license = "MIT"
@@ -40,6 +40,8 @@ semver = "1" # compare release tags in the updater
 ureq = { version = "2", features = ["json"] } # GitHub Releases API and downloads
 sha2 = "0.10" # verify update checksums
 zip = { version = "2", default-features = false, features = ["deflate"] } # unpack portable updates
+thread-priority = "3.1.1"
+fs4 = { version = "1.1", features = ["sync"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rfd = "0.17.2"

@@ -2210,6 +2210,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs4"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e72ed92b67c146290f88e9c89d60ca163ea417a446f61ffd7b72df3e7f1dfd5"
+dependencies = [
+ "rustix 1.1.4",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "futf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6276,6 +6286,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread-priority"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d2e834949be5111506bb252643498af1514f600d9e1dceedaa42afae155b67f"
+dependencies = [
+ "bitflags 2.13.0",
+ "cfg-if",
+ "libc",
+ "log",
+ "rustversion",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "thread_local"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7036,7 +7060,7 @@ dependencies = [
 
 [[package]]
 name = "wave_player"
-version = "0.1.0-alpha.16"
+version = "0.1.0-alpha.17"
 dependencies = [
  "async-broadcast",
  "audiotags",
@@ -7046,6 +7070,7 @@ dependencies = [
  "ebur128",
  "embed-resource",
  "flume",
+ "fs4",
  "futures-util",
  "generational-box",
  "hound",
@@ -7066,6 +7091,7 @@ dependencies = [
  "sha2",
  "stratum-dsp",
  "thiserror 2.0.20",
+ "thread-priority",
  "timestretch",
  "tokio",
  "ureq",

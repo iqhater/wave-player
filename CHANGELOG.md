@@ -1,3 +1,24 @@
+## [0.1.0-alpha.17] - 2026-10-30
+
+### 🚀 Features
+
+- *(desktop)* Open audio files from the OS
+
+### 🐛 Bug Fixes
+
+- *(settings)* Persist hover and sidebar state
+- *(favorites)* Keep state across screen changes
+- *(bpm)* Persist manual tempo edits
+- *(loop)* Keep drag responsive during analysis
+- *(build)* Embed the wave player icon
+
+### 📚 Documentation
+
+- Document open-with and single instance
+
+### ⚙️ Miscellaneous Tasks
+
+- *(openspec)* Archive the october bug batch
 ## [0.1.0-alpha.16] - 2026-10-27
 
 ### 🚀 Features
