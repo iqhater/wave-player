@@ -72,6 +72,12 @@ impl<T: Send + 'static> Latest<T> {
         let pending_rx = rx.clone();
 
         thread::spawn(move || {
+            if let Err(error) =
+                thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Min)
+            {
+                eprintln!("failed to lower analysis thread priority: {error}");
+            }
+
             while let Ok(job) = rx.recv() {
                 run(job);
             }
@@ -694,6 +700,7 @@ fn decode_overview(
     loop {
         if frame_index % CHECK_INTERVAL == 0 {
             job.token.check()?;
+            thread::yield_now();
         }
 
         if !read_frame(&mut decoder, &mut frame) {
@@ -769,6 +776,7 @@ fn decode_mono(job: &TrackJob) -> AnalysisResult<(Vec<f32>, u32)> {
     for frame_index in 0..max_frames {
         if frame_index % CHECK_INTERVAL == 0 {
             job.token.check()?;
+            thread::yield_now();
         }
 
         if !read_frame(&mut decoder, &mut frame) {
@@ -824,6 +832,7 @@ fn analyze_detail(job: &DetailJob, output_tx: &flume::Sender<Output>) -> Analysi
     for frame_index in 0..end_frame {
         if frame_index % CHECK_INTERVAL == 0 {
             job.token.check()?;
+            thread::yield_now();
         }
 
         if !read_frame(&mut decoder, &mut frame) {

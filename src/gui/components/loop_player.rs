@@ -1,11 +1,198 @@
 use crate::PlayerContext;
 use crate::PlayerEvent;
-use crate::gui::layout::LoopUIState;
+use crate::gui::layout::{LoopDragging, LoopUIState};
 use crate::shared::command_types::PlayerCommand;
 
+use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
 use std::time::Duration;
+
+pub(crate) const MIN_LOOP_LENGTH: f32 = 0.5;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct LoopBounds {
+    pub start: f32,
+    pub end: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum DragMode {
+    Move,
+    Start,
+    End,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct DragSession {
+    mode: DragMode,
+    anchor_start: f32,
+    anchor_end: f32,
+    pointer_x: f32,
+    container_width: f32,
+    duration: f32,
+    zoom: f32,
+}
+
+impl DragSession {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn begin(
+        mode: DragMode,
+        anchor_start: f32,
+        anchor_end: f32,
+        pointer_x: f32,
+        container_width: f32,
+        duration: f32,
+        zoom: f32,
+    ) -> Self {
+        Self {
+            mode,
+            anchor_start,
+            anchor_end,
+            pointer_x,
+            container_width: container_width.max(1.0),
+            duration: duration.max(0.0),
+            zoom: zoom.max(1.0),
+        }
+    }
+
+    pub(crate) fn bounds_at(&self, client_x: f32) -> LoopBounds {
+        let dx = client_x - self.pointer_x;
+        let delta = (dx / self.container_width) * (self.duration / self.zoom);
+
+        match self.mode {
+            DragMode::Move => {
+                move_loop_region(self.anchor_start, self.anchor_end, delta, self.duration)
+            }
+            DragMode::Start => LoopBounds {
+                start: resize_loop_start(self.anchor_start, delta, self.anchor_end),
+                end: self.anchor_end,
+            },
+            DragMode::End => LoopBounds {
+                start: self.anchor_start,
+                end: resize_loop_end(self.anchor_end, delta, self.anchor_start, self.duration),
+            },
+        }
+    }
+
+    pub(crate) fn cancelled_bounds(&self) -> LoopBounds {
+        LoopBounds {
+            start: self.anchor_start,
+            end: self.anchor_end,
+        }
+    }
+}
+
+pub(crate) fn move_loop_region(
+    anchor_start: f32,
+    anchor_end: f32,
+    delta: f32,
+    duration: f32,
+) -> LoopBounds {
+    let width = (anchor_end - anchor_start).max(MIN_LOOP_LENGTH);
+    let max_start = (duration - width).max(0.0);
+    let start = (anchor_start + delta).clamp(0.0, max_start);
+
+    LoopBounds {
+        start,
+        end: (start + width).min(duration),
+    }
+}
+
+pub(crate) fn resize_loop_start(anchor_start: f32, delta: f32, end: f32) -> f32 {
+    (anchor_start + delta).clamp(0.0, (end - MIN_LOOP_LENGTH).max(0.0))
+}
+
+pub(crate) fn resize_loop_end(anchor_end: f32, delta: f32, start: f32, duration: f32) -> f32 {
+    (anchor_end + delta).clamp((start + MIN_LOOP_LENGTH).min(duration), duration)
+}
+
+pub(crate) fn time_to_viewport_pct(time: f32, duration: f32, zoom: f32, view_center: f32) -> f32 {
+    if duration <= 0.0 {
+        return 0.0;
+    }
+
+    let zoom = zoom.max(1.0);
+    let visible = 100.0 / zoom;
+    let view_start = (view_center - visible / 2.0).clamp(0.0, (100.0 - visible).max(0.0));
+    let pct = ((time / duration) * 100.0 - view_start) / visible * 100.0;
+
+    pct.clamp(0.0, 100.0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn begin_drag(
+    mode: DragMode,
+    client_x: f32,
+    pointer_id: i32,
+    mut dragging: Signal<Option<DragMode>>,
+    mut active_pointer_id: Signal<Option<i32>>,
+    mut loop_dragging: Signal<bool>,
+    mut drag_session: Signal<Option<DragSession>>,
+    loop_start: Signal<f32>,
+    loop_end: Signal<f32>,
+    container_width: Signal<f32>,
+    total_duration: f32,
+    zoom: Signal<f32>,
+) {
+    if dragging().is_some() {
+        return;
+    }
+
+    // Start the session synchronously from the cached width. Waiting for a
+    // `getBoundingClientRect` round-trip here made the region lag behind the
+    // cursor (especially while analysis was loading the CPU).
+    let session = DragSession::begin(
+        mode,
+        loop_start(),
+        loop_end(),
+        client_x,
+        container_width().max(1.0),
+        total_duration,
+        zoom(),
+    );
+
+    dragging.set(Some(mode));
+    active_pointer_id.set(Some(pointer_id));
+    loop_dragging.set(true);
+    drag_session.set(Some(session));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn end_drag(
+    commit: bool,
+    mut dragging: Signal<Option<DragMode>>,
+    mut drag_session: Signal<Option<DragSession>>,
+    mut active_pointer_id: Signal<Option<i32>>,
+    mut loop_dragging: Signal<bool>,
+    mut loop_start: Signal<f32>,
+    mut loop_end: Signal<f32>,
+    ctx: PlayerContext,
+) {
+    if dragging().is_none() {
+        return;
+    }
+
+    if !commit {
+        if let Some(session) = drag_session() {
+            let bounds = session.cancelled_bounds();
+            loop_start.set(bounds.start);
+            loop_end.set(bounds.end);
+        }
+    }
+
+    dragging.set(None);
+    drag_session.set(None);
+    active_pointer_id.set(None);
+    loop_dragging.set(false);
+
+    if commit {
+        let _ = ctx.command_tx.read().send(PlayerCommand::SetLoop(
+            Duration::from_secs_f32(loop_start()),
+            Duration::from_secs_f32(loop_end()),
+        ));
+    }
+}
 
 #[component]
 pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signal<f32>) -> Element {
@@ -14,18 +201,118 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
 
     let mut loop_start = loop_state.start;
     let mut loop_end = loop_state.end;
+    let mut loop_dragging = use_context::<LoopDragging>().0;
+
+    let dragging = use_signal(|| None::<DragMode>);
+    let drag_session = use_signal(|| None::<DragSession>);
+    let active_pointer_id = use_signal(|| None::<i32>);
+    let mut is_loop_enabled = loop_state.enabled;
+
+    // Export signals
+    let mut export_started = use_signal(|| false);
+    let mut export_progress = use_signal(|| 0.0f32);
+    let mut exported_path = use_signal(|| None::<String>);
+
+    let mut container_width = use_signal(|| 600.0f32);
+
+    let zoom_factor = zoom().max(1.0);
+    let view_center_value = view_center();
+    let lp = time_to_viewport_pct(loop_start(), total_duration, zoom_factor, view_center_value);
+    let rp = time_to_viewport_pct(loop_end(), total_duration, zoom_factor, view_center_value);
+
+    // The labels are about 50 px wide with the current font and padding.
+    const LOOP_LABEL_COLLISION_GAP_PX: f32 = 52.0;
+
+    let loop_markers_distance_px = (rp - lp).abs() / 100.0 * container_width().max(1.0);
+    let loop_labels_overlap = loop_markers_distance_px < LOOP_LABEL_COLLISION_GAP_PX;
+    let loop_labels_center = (lp + rp) / 2.0;
+
+    let send_set_loop = move || {
+        let _ = ctx.command_tx.read().send(PlayerCommand::SetLoop(
+            Duration::from_secs_f32(loop_start()),
+            Duration::from_secs_f32(loop_end()),
+        ));
+    };
 
     use_effect(move || {
-        // Чтение сигналов внутри эффекта делает их зависимостями.
-        let _ = (loop_start(), loop_end(), total_duration);
+        let Some(_mode) = dragging() else {
+            return;
+        };
+        let Some(pointer_id) = active_pointer_id() else {
+            return;
+        };
 
-        let _ = dioxus::document::eval(
-            r#"
-            if (window.updateWaveViewportVariables) {
-                window.updateWaveViewportVariables();
+        spawn(async move {
+            let mut eval = dioxus::document::eval(
+                r#"
+                let data = await dioxus.recv();
+                const overlay = document.getElementById("loop-drag-overlay");
+
+                if (overlay && data.pointerId != null) {
+                    try {
+                        overlay.setPointerCapture(data.pointerId);
+                    } catch (_) {}
+                }
+
+                const cleanup = () => {
+                    window.removeEventListener("pointerup", onUp, true);
+                    window.removeEventListener("pointercancel", onCancel, true);
+                    window.removeEventListener("keydown", onKey, true);
+
+                    if (window.__waveLoopDragCleanup === cleanup) {
+                        window.__waveLoopDragCleanup = null;
+                    }
+                };
+
+                const onUp = () => {
+                    cleanup();
+                    dioxus.send("up");
+                };
+
+                const onCancel = () => {
+                    cleanup();
+                    dioxus.send("cancel");
+                };
+
+                const onKey = (event) => {
+                    if (event.key === "Escape") {
+                        cleanup();
+                        dioxus.send("cancel");
+                    }
+                };
+
+                window.__waveLoopDragCleanup = cleanup;
+                window.addEventListener("pointerup", onUp, true);
+                window.addEventListener("pointercancel", onCancel, true);
+                window.addEventListener("keydown", onKey, true);
+                "#,
+            );
+
+            let _ = eval.send(serde_json::json!({ "pointerId": pointer_id }));
+
+            if let Ok(message) = eval.recv().await {
+                let commit = matches!(
+                    message,
+                    serde_json::Value::String(ref value) if value == "up"
+                );
+
+                end_drag(
+                    commit,
+                    dragging,
+                    drag_session,
+                    active_pointer_id,
+                    loop_dragging,
+                    loop_start,
+                    loop_end,
+                    ctx,
+                );
             }
-            "#,
-        );
+        });
+    });
+
+    use_drop(move || {
+        loop_dragging.set(false);
+        let _ = dioxus::document::eval("window.__waveLoopDragCleanup?.();");
     });
 
     // 2. Делаем пропс реактивным с помощью use_reactive!
@@ -52,64 +339,6 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
             }
         }
     }));
-
-    let mut dragging = use_signal(|| None::<&'static str>);
-    let mut anchor_x = use_signal(|| 0.0f32);
-    let mut anchor_val = use_signal(|| 0.0f32); // loop_start для L, loop_end для R
-    let mut anchor_l = use_signal(|| 0.0f32);
-    let mut anchor_r = use_signal(|| 0.0f32);
-    let mut is_loop_enabled = loop_state.enabled;
-
-    // Export signals
-    let mut export_started = use_signal(|| false);
-    let mut export_progress = use_signal(|| 0.0f32);
-    let mut exported_path = use_signal(|| None::<String>);
-
-    // Контейнер 600px, родитель по центру — cl примерно 300px при 1200px экране
-    // Но чтобы не гадать — просто читаем из onmounted один раз
-    let mut cl = use_signal(|| 0.0f32);
-    let mut container_width = use_signal(|| 600.0f32);
-
-    let lp = if total_duration > 0.0 {
-        loop_start() / total_duration * 100.0
-    } else {
-        0.0
-    };
-    let rp = if total_duration > 0.0 {
-        loop_end() / total_duration * 100.0
-    } else {
-        100.0
-    };
-
-    // The labels are about 50 px wide with the current font and padding.
-    const LOOP_LABEL_COLLISION_GAP_PX: f32 = 52.0;
-
-    let zoom_factor = zoom().max(1.0);
-
-    let visible_duration = if total_duration > 0.0 {
-        total_duration / zoom_factor
-    } else {
-        0.0
-    };
-
-    let loop_duration = (loop_end() - loop_start()).max(0.0);
-
-    let loop_markers_distance_px = if visible_duration > 0.0 {
-        (loop_duration / visible_duration) * container_width().max(1.0)
-    } else {
-        0.0
-    };
-
-    let loop_labels_overlap = loop_markers_distance_px < LOOP_LABEL_COLLISION_GAP_PX;
-
-    let loop_labels_center = (lp + rp) / 2.0;
-
-    let send_set_loop = move || {
-        let _ = ctx.command_tx.read().send(PlayerCommand::SetLoop(
-            Duration::from_secs_f32(loop_start()),
-            Duration::from_secs_f32(loop_end()),
-        ));
-    };
 
     use_future(move || {
         // Ignore export events emitted before this component was mounted.
@@ -147,18 +376,27 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
 
     rsx! {
         div {
-            class: "absolute w-full max-w-[600px] h-28 rounded-xl select-none pointer-events-auto",
-            "data-loop-start": "{loop_start()}",
-            "data-loop-end": "{loop_end()}",
-            // style: "width: 600px;",
+            id: "loop-drag-root",
+            class: "absolute inset-0 z-10 select-none pointer-events-none",
             onmounted: move |el| {
+                // Track the actual width continuously so a drag can start
+                // synchronously and stays correct after window resizes.
                 spawn(async move {
-                    if let Ok(r) = el.get_client_rect().await {
-                        cl.set(r.origin.x as f32);
-                        container_width.set(r.size.width as f32);
+                    loop {
+                        if let Ok(r) = el.get_client_rect().await {
+                            let width = r.size.width.max(1.0) as f32;
+                            let current = *container_width.peek();
+
+                            if (current - width).abs() > 0.5 {
+                                container_width.set(width);
+                            }
+                        }
+
+                        tokio::time::sleep(Duration::from_millis(250)).await;
                     }
                 });
             },
+            onclick: move |e| e.stop_propagation(),
 
             // same zoom at the inner loop region
             onwheel: move |e| {
@@ -240,78 +478,68 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
             // даже когда курсор слетает с маркеров/региона (как в крутилках)
             if dragging().is_some() {
                 div {
-                    // class: "fixed inset-0 z-50 cursor-grab bg-transparent select-none",
-                    class: if dragging() == Some("M") {
-                        "fixed inset-0 z-50 cursor-grabbing bg-transparent select-none"
+                    id: "loop-drag-overlay",
+                    class: if dragging() == Some(DragMode::Move) {
+                        "fixed inset-0 z-50 cursor-grabbing bg-transparent select-none pointer-events-auto"
                     } else {
-                        "fixed inset-0 z-50 cursor-w-resize bg-transparent select-none"
+                        "fixed inset-0 z-50 cursor-w-resize bg-transparent select-none pointer-events-auto"
                     },
                     style: "-webkit-tap-highlight-color: transparent;",
-                    onmousemove: move |e| {
-                        if let Some(mode) = dragging() {
-                            let left = cl();
-                            let cx = e.data().client_coordinates().x as f32 - left;
-                            // let container_width = 600.0;
-                            let container_width = container_width().max(1.0);
-                            let visible_duration = total_duration / zoom().max(1.0);
-
-                            match mode {
-                                "M" => {
-                                    let dx = cx - anchor_x();
-                                    let ds = (dx / container_width) * visible_duration;
-                                    let rw = anchor_r() - anchor_l();
-                                    let mut ns = anchor_l() + ds;
-                                    ns = ns.max(0.0).min((total_duration - rw).max(0.0));
-                                    loop_start.set(ns);
-                                    loop_end.set(ns + rw);
-                                }
-                                "L" => {
-                                    let dx = cx - anchor_x();
-                                    let ds = (dx / container_width) * visible_duration;
-                                    let new_l = (anchor_val() + ds)
-                                        .max(0.0)
-                                        .min((loop_end() - 0.5).max(0.0));
-                                    loop_start.set(new_l);
-                                }
-                                "R" => {
-                                    let dx = cx - anchor_x();
-                                    let ds = (dx / container_width) * visible_duration;
-                                    let new_r = (anchor_val() + ds)
-                                        .max(loop_start() + 0.5)
-                                        .min(total_duration);
-                                    loop_end.set(new_r);
-                                }
-                                _ => {}
-                            }
+                    onpointermove: move |e| {
+                        if let Some(session) = drag_session() {
+                            let bounds = session.bounds_at(e.data().client_coordinates().x as f32);
+                            loop_start.set(bounds.start);
+                            loop_end.set(bounds.end);
                         }
                     },
-                    onmouseup: move |_| {
-                        if dragging().is_some() {
-                            dragging.set(None);
-                            send_set_loop();
-                        }
+                    onpointerup: move |_| {
+                        end_drag(
+                            true,
+                            dragging,
+                            drag_session,
+                            active_pointer_id,
+                            loop_dragging,
+                            loop_start,
+                            loop_end,
+                            ctx,
+                        )
                     },
-                    onmouseleave: move |_| {
-                        if dragging().is_some() {
-                            dragging.set(None);
-                        }
+                    onpointercancel: move |_| {
+                        end_drag(
+                            false,
+                            dragging,
+                            drag_session,
+                            active_pointer_id,
+                            loop_dragging,
+                            loop_start,
+                            loop_end,
+                            ctx,
+                        )
                     },
                 }
             },
 
             // Область петли
             div {
-                class: "absolute inset-y-0 border-2 border-dashed rounded-xl border-primary/60 cursor-grab z-10",
+                class: "absolute inset-y-0 border-2 border-dashed rounded-xl border-primary/60 cursor-grab z-10 pointer-events-auto",
                 class: if is_loop_enabled() { "bg-primary/20" } else { "bg-primary/5" },
-                // style: "left: {lp}%; right: {100.0 - rp}%;",
-                style: "left: var(--wave-loop-start, {lp}%); right: calc(100% - var(--wave-loop-end, {rp}%));",
-                onmousedown: move |e| {
+                style: "left: {lp}%; right: calc(100% - {rp}%);",
+                onpointerdown: move |e| {
                     e.stop_propagation();
-                    dragging.set(Some("M"));
-                    let left = cl();
-                    anchor_x.set(e.data().client_coordinates().x as f32 - left);
-                    anchor_l.set(loop_start());
-                    anchor_r.set(loop_end());
+                    begin_drag(
+                        DragMode::Move,
+                        e.data().client_coordinates().x as f32,
+                        e.data().pointer_id(),
+                        dragging,
+                        active_pointer_id,
+                        loop_dragging,
+                        drag_session,
+                        loop_start,
+                        loop_end,
+                        container_width,
+                        total_duration,
+                        zoom,
+                    );
                 },
 
                 // Кнопка export cursor: not-allowed;
@@ -320,7 +548,7 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
                     style: "font-size: 20px;",
                     title: "Export audio loop",
                     // Не даём клику по кнопке запускать захват региона
-                    onmousedown: move |e| e.stop_propagation(),
+                    onpointerdown: move |e| e.stop_propagation(),
                     onclick: move |_| {
                         if !export_started() {
                             send_set_loop();
@@ -356,7 +584,7 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
                     style: "font-size: 20px;",
                     title: "Toggle loop",
                     // Не даём клику по кнопке запускать захват региона
-                    onmousedown: move |e| e.stop_propagation(),
+                    onpointerdown: move |e| e.stop_propagation(),
                     onclick: {
                         move |_| {
                             let _ = ctx.command_tx.read().send(PlayerCommand::ToggleLoop(!is_loop_enabled()));
@@ -387,7 +615,7 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
                     class: "pointer-events-auto cursor-default fixed p-5 top-1/2 left-[60%] z-60 w-[420px] max-w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-outline-variant bg-surface-container-high shadow-2xl",
                     style: "z-index: 110;",
 
-                    onmousedown: move |evt| {
+                    onpointerdown: move |evt| {
                         evt.stop_propagation();
                     },
 
@@ -486,7 +714,7 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
                     class: "pointer-events-none absolute z-30 flex
                             -translate-x-1/2 flex-col items-center gap-0.5",
 
-                    style: "left: var(--wave-loop-center, {loop_labels_center}%); bottom: calc(100% + 4px);",
+                    style: "left: {loop_labels_center}%; bottom: calc(100% + 4px);",
 
                     div {
                         class: "rounded-md bg-primary/10 px-1 text-center
@@ -506,15 +734,24 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
 
             // Левый маркер
             div {
-                class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20",
-                // style: "left: {lp}%;",
-                style: "left: var(--wave-loop-start, {lp}%);",
-                onmousedown: move |e| {
+                class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20 pointer-events-auto",
+                style: "left: {lp}%;",
+                onpointerdown: move |e| {
                     e.stop_propagation();
-                    dragging.set(Some("L"));
-                    let left = cl();
-                    anchor_x.set(e.data().client_coordinates().x as f32 - left);
-                    anchor_val.set(loop_start());
+                    begin_drag(
+                        DragMode::Start,
+                        e.data().client_coordinates().x as f32,
+                        e.data().pointer_id(),
+                        dragging,
+                        active_pointer_id,
+                        loop_dragging,
+                        drag_session,
+                        loop_start,
+                        loop_end,
+                        container_width,
+                        total_duration,
+                        zoom,
+                    );
                 },
                 // Метка над левым маркером
                 if !loop_labels_overlap {
@@ -532,15 +769,24 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
 
             // Правый маркер
             div {
-                class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20",
-                // style: "left: {rp}%;",
-                style: "left: var(--wave-loop-end, {rp}%);",
-                onmousedown: move |e| {
+                class: "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 cursor-w-resize z-20 pointer-events-auto",
+                style: "left: {rp}%;",
+                onpointerdown: move |e| {
                     e.stop_propagation();
-                    dragging.set(Some("R"));
-                    let left = cl();
-                    anchor_x.set(e.data().client_coordinates().x as f32 - left);
-                    anchor_val.set(loop_end());
+                    begin_drag(
+                        DragMode::End,
+                        e.data().client_coordinates().x as f32,
+                        e.data().pointer_id(),
+                        dragging,
+                        active_pointer_id,
+                        loop_dragging,
+                        drag_session,
+                        loop_start,
+                        loop_end,
+                        container_width,
+                        total_duration,
+                        zoom,
+                    );
                 },
                 // Метка над правым маркером
                 if !loop_labels_overlap {
@@ -596,3 +842,118 @@ fn open_file_location(path: String) {
 
 #[cfg(target_os = "android")]
 fn open_file_location(_path: String) {}
+
+#[cfg(test)]
+mod loop_tests {
+    use super::{
+        DragMode, DragSession, LoopBounds, move_loop_region, resize_loop_end, resize_loop_start,
+        time_to_viewport_pct,
+    };
+
+    #[test]
+    fn viewport_pct_should_show_the_whole_track_at_zoom_one() {
+        assert_eq!(time_to_viewport_pct(0.0, 100.0, 1.0, 50.0), 0.0);
+        assert_eq!(time_to_viewport_pct(50.0, 100.0, 1.0, 50.0), 50.0);
+        assert_eq!(time_to_viewport_pct(100.0, 100.0, 1.0, 50.0), 100.0);
+    }
+
+    #[test]
+    fn viewport_pct_should_follow_zoom_and_center() {
+        assert_eq!(time_to_viewport_pct(25.0, 100.0, 2.0, 50.0), 0.0);
+        assert_eq!(time_to_viewport_pct(50.0, 100.0, 2.0, 50.0), 50.0);
+        assert_eq!(time_to_viewport_pct(75.0, 100.0, 2.0, 50.0), 100.0);
+        assert_eq!(time_to_viewport_pct(50.0, 100.0, 2.0, 100.0), 0.0);
+        assert_eq!(time_to_viewport_pct(100.0, 100.0, 2.0, 100.0), 100.0);
+    }
+
+    #[test]
+    fn viewport_pct_should_be_zero_without_a_track() {
+        assert_eq!(time_to_viewport_pct(10.0, 0.0, 1.0, 50.0), 0.0);
+    }
+
+    #[test]
+    fn moving_the_region_should_preserve_length_and_clamp() {
+        assert_eq!(
+            move_loop_region(10.0, 20.0, 5.0, 100.0),
+            LoopBounds {
+                start: 15.0,
+                end: 25.0
+            }
+        );
+        assert_eq!(
+            move_loop_region(0.0, 10.0, -5.0, 100.0),
+            LoopBounds {
+                start: 0.0,
+                end: 10.0
+            }
+        );
+        assert_eq!(
+            move_loop_region(90.0, 100.0, 10.0, 100.0),
+            LoopBounds {
+                start: 90.0,
+                end: 100.0
+            }
+        );
+    }
+
+    #[test]
+    fn resizing_markers_should_enforce_minimum_length_and_bounds() {
+        assert_eq!(resize_loop_start(10.0, 15.0, 20.0), 19.5);
+        assert_eq!(resize_loop_start(10.0, -20.0, 20.0), 0.0);
+        assert_eq!(resize_loop_end(20.0, -20.0, 10.0, 100.0), 10.5);
+        assert_eq!(resize_loop_end(90.0, 20.0, 10.0, 100.0), 100.0);
+    }
+
+    #[test]
+    fn drag_session_should_compute_move_relative_to_pointer_start() {
+        let session = DragSession::begin(DragMode::Move, 10.0, 20.0, 50.0, 100.0, 100.0, 1.0);
+
+        assert_eq!(
+            session.bounds_at(60.0),
+            LoopBounds {
+                start: 20.0,
+                end: 30.0
+            }
+        );
+        assert_eq!(
+            session.bounds_at(50.0),
+            LoopBounds {
+                start: 10.0,
+                end: 20.0
+            }
+        );
+    }
+
+    #[test]
+    fn drag_session_should_use_visible_duration_at_zoom() {
+        let session = DragSession::begin(DragMode::Move, 10.0, 20.0, 50.0, 100.0, 100.0, 2.0);
+
+        assert_eq!(
+            session.bounds_at(100.0),
+            LoopBounds {
+                start: 35.0,
+                end: 45.0
+            }
+        );
+    }
+
+    #[test]
+    fn drag_session_cancel_should_restore_the_anchor() {
+        let session = DragSession::begin(DragMode::Start, 10.0, 20.0, 50.0, 100.0, 100.0, 1.0);
+
+        assert_eq!(
+            session.bounds_at(90.0),
+            LoopBounds {
+                start: 19.5,
+                end: 20.0
+            }
+        );
+        assert_eq!(
+            session.cancelled_bounds(),
+            LoopBounds {
+                start: 10.0,
+                end: 20.0
+            }
+        );
+    }
+}

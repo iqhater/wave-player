@@ -11,7 +11,8 @@ use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::{BeatGridData, PlayerEvent};
 
 use crate::gui::layout::{
-    BeatGridSnap, LoopRepeatRegion, PlaybackUIState, ShowBeatGrid, ShowTimeMarkers,
+    BeatGridSnap, LoopDragging, LoopRepeatRegion, PlaybackUIState, ShowBeatGrid, ShowHoverCursor,
+    ShowTimeMarkers,
 };
 use dioxus::prelude::*;
 use futures_util::StreamExt;
@@ -30,10 +31,18 @@ pub fn Waveform() -> Element {
     // Timeline settings & loop
     let show_time_markers = use_context::<ShowTimeMarkers>().0;
     let is_loop_enabled = use_context::<LoopRepeatRegion>().0;
+    let show_hover_cursor = use_context::<ShowHoverCursor>().0;
+    let loop_dragging = use_context::<LoopDragging>().0;
 
     // Read reactive state from context
     let mut position_secs = playback.position_secs;
     let mut hover_position_secs = use_signal(|| None::<f32>);
+
+    use_effect(move || {
+        if !show_hover_cursor() || loop_dragging() {
+            hover_position_secs.set(None);
+        }
+    });
 
     let mut duration_secs = playback.duration_secs;
     let mut has_track = playback.has_track;
@@ -41,7 +50,6 @@ pub fn Waveform() -> Element {
     // Loop state (shared with LoopPlayer)
 
     // Drag state
-    let dragging = use_signal(|| None::<&'static str>);
     // Overlay is visible only when there is no loaded track.
     let mut is_dragover_event = use_signal(move || !has_track());
 
@@ -51,8 +59,6 @@ pub fn Waveform() -> Element {
     // Zoom state
     let zoom_level = use_signal(|| 1.0f32);
     let view_center = use_signal(|| 50.0f32);
-
-    let waveform_peaks = playback.waveform_peaks;
 
     let pos = position_secs();
     let dur = duration_secs();
@@ -236,13 +242,6 @@ pub fn Waveform() -> Element {
                 }
             },
 
-            if has_track() {
-                // Loop Player component
-                if is_loop_enabled() {
-                    LoopPlayer { total_duration: dur, zoom: zoom_level, view_center, },
-                }
-            }
-
             div {
                 class: "flex h-28 w-full min-w-0 items-stretch gap-2",
             div {
@@ -251,9 +250,20 @@ pub fn Waveform() -> Element {
                             rounded-2xl neumorph-sunken
                             hover:shadow",
                 onmounted: move |el| {
+                    // Keep the rect fresh: the window can be resized and the
+                    // sidebar can change the left offset while the component
+                    // stays mounted. Hover and click use client coordinates,
+                    // so both the origin and the width must be current.
                     spawn(async move {
-                        if let Ok(rect) = el.get_client_rect().await {
-                            container_rect.set(Some((rect.origin.x as f32, rect.size.width as f32)));
+                        loop {
+                            if let Ok(rect) = el.get_client_rect().await {
+                                let next = (rect.origin.x as f32, rect.size.width as f32);
+                                if container_rect.peek().as_ref() != Some(&next) {
+                                    container_rect.set(Some(next));
+                                }
+                            }
+
+                            tokio::time::sleep(Duration::from_millis(250)).await;
                         }
                     });
                 },
@@ -261,12 +271,8 @@ pub fn Waveform() -> Element {
                 // Timeline click to seek
                 onclick: {
                     move |e| {
-                        if dragging().is_some() {
-                            return;
-                        }
-
                         let duration = duration_secs();
-                        let Some((_, width)) = container_rect() else {
+                        let Some((left, width)) = container_rect() else {
                             return;
                         };
 
@@ -274,7 +280,11 @@ pub fn Waveform() -> Element {
                             return;
                         }
 
-                        let element_x = e.element_coordinates().x as f32;
+                        // `element_coordinates` are relative to the element under
+                        // the cursor (for example the loop region), not to this
+                        // container, so use client coordinates instead.
+                        let client_x = e.data().client_coordinates().x as f32;
+                        let element_x = (client_x - left).clamp(0.0, width);
                         let pct = (element_x / width).clamp(0.0, 1.0);
 
                         let zoom = zoom_level().max(1.0);
@@ -320,7 +330,11 @@ pub fn Waveform() -> Element {
 
                 // Timeline cursor hover
                 onmousemove: move |event| {
-                    let Some((_, width)) = container_rect() else {
+                    if !show_hover_cursor() || loop_dragging() {
+                        return;
+                    }
+
+                    let Some((left, width)) = container_rect() else {
                         return;
                     };
 
@@ -328,7 +342,10 @@ pub fn Waveform() -> Element {
                         return;
                     }
 
-                    let x = event.element_coordinates().x as f32;
+                    // The event target can be a child (loop region or marker),
+                    // so anchor the position to the container via client coords.
+                    let client_x = event.data().client_coordinates().x as f32;
+                    let x = (client_x - left).clamp(0.0, width);
                     let viewport_progress = (x / width).clamp(0.0, 1.0);
 
                     // Convert mouse position inside the visible viewport
@@ -356,7 +373,6 @@ pub fn Waveform() -> Element {
                         cursor_progress,
                         zoom: zoom_level,
                         view_center,
-                        waveform_peaks,
                     }
 
                     // DONE
@@ -383,26 +399,35 @@ pub fn Waveform() -> Element {
                 }
 
                 // Hover preview cursor
-                if let Some(hover_progress) = hover_cursor_progress {
-                    if let Some(hover_position) = hover_position_secs() {
-                        div {
-                            class: "absolute top-0 bottom-0 flex items-center justify-center z-10 pointer-events-none opacity-45",
-                            style: "left: {hover_progress}%; transform: translateX(-50%);",
-                            title: "Preview position",
-
+                if show_hover_cursor() {
+                    if let Some(hover_progress) = hover_cursor_progress {
+                        if let Some(hover_position) = hover_position_secs() {
                             div {
-                                class: "w-[2px] h-full bg-primary shadow-[0_0_8px_rgba(84,98,83,0.5)]"
-                            }
+                                class: "absolute top-0 bottom-0 flex items-center justify-center z-10 pointer-events-none opacity-45",
+                                style: "left: {hover_progress}%; transform: translateX(-50%);",
+                                title: "Preview position",
 
-                            div {
-                                class: "absolute -top-0 w-2 h-2 rounded-full bg-primary"
-                            }
+                                div {
+                                    class: "w-[2px] h-full bg-primary shadow-[0_0_8px_rgba(84,98,83,0.5)]"
+                                }
 
-                            div {
-                                class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-10",
-                                "{format_time(hover_position as u32)}"
+                                div {
+                                    class: "absolute -top-0 w-2 h-2 rounded-full bg-primary"
+                                }
+
+                                div {
+                                    class: "absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-primary font-mono bg-primary/20 px-1 rounded-md text-center whitespace-nowrap z-10",
+                                    "{format_time(hover_position as u32)}"
+                                }
                             }
                         }
+                    }
+                }
+
+                if has_track() {
+                    // Loop Player overlays only the waveform canvas area.
+                    if is_loop_enabled() {
+                        LoopPlayer { total_duration: dur, zoom: zoom_level, view_center, }
                     }
                 }
 
@@ -411,10 +436,9 @@ pub fn Waveform() -> Element {
                         is_dragover_event: is_dragover_event,
                     }
                 }
-
-                if has_track() {
-                    VolumeMeter {}
-                }
+            }
+            if has_track() {
+                VolumeMeter {}
             }
             }
 

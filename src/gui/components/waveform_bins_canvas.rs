@@ -1,4 +1,5 @@
 use crate::PlayerContext;
+use crate::gui::layout::LoopDragging;
 use crate::shared::command_types::PlayerCommand;
 use crate::shared::event_types::{PlayerEvent, WaveformEnvelope};
 use dioxus::core::use_drop;
@@ -153,54 +154,6 @@ const WAVEFORM_JS: &str = r#"
         waveformContainer.style.setProperty(
             "--wave-cursor-pct",
             `${Math.max(0, Math.min(100, cursorPct))}%`
-        );
-
-        /*
-         * LoopPlayer находится в том же waveform-контейнере.
-         * Его значения доступны через data-loop-start/end.
-         */
-        const loopElement =
-            document.querySelector(
-                "[data-loop-start][data-loop-end]"
-            );
-
-        if (!loopElement) {
-            return;
-        }
-
-        const loopStart =
-            Number(loopElement.dataset.loopStart || 0);
-
-        const loopEnd =
-            Number(loopElement.dataset.loopEnd || 0);
-
-        if (loopEnd <= loopStart) {
-            return;
-        }
-
-        const loopStartPct =
-            window.waveViewportPctAtTime(loopStart);
-
-        const loopEndPct =
-            window.waveViewportPctAtTime(loopEnd);
-
-        const visibleLoopStartPct = Math.max(0, Math.min(100, loopStartPct));
-        const visibleLoopEndPct = Math.max(0, Math.min(100, loopEndPct));
-        const loopCenterPct = (visibleLoopStartPct + visibleLoopEndPct) / 2;
-
-        loopElement.style.setProperty(
-            "--wave-loop-start",
-            `${visibleLoopStartPct}%`
-        );
-
-        loopElement.style.setProperty(
-            "--wave-loop-end",
-            `${visibleLoopEndPct}%`
-        );
-
-        loopElement.style.setProperty(
-            "--wave-loop-center",
-            `${loopCenterPct}%`
         );
     }
 
@@ -677,6 +630,21 @@ if (typeof data.progress === "number") {
 }
 "#;
 
+// Lightweight variant used while the loop region is being dragged: it only
+// advances the playback cursor. The full canvas redraw is skipped so pointer
+// handling keeps priority, but the cursor must never freeze.
+const WAVEFORM_CURSOR_JS: &str = r#"
+let data = await dioxus.recv();
+
+if (typeof data.progress === "number") {
+    window.waveProgress = data.progress;
+
+    if (window.updateWaveViewportVariables) {
+        window.updateWaveViewportVariables();
+    }
+}
+"#;
+
 #[derive(Clone, Debug)]
 struct DetailWaveform {
     start_frame: usize,
@@ -692,11 +660,12 @@ pub fn WaveformBinsCanvas(
     cursor_progress: ReadSignal<f32>,
     mut zoom: Signal<f32>,
     mut view_center: Signal<f32>,
-    mut waveform_peaks: Signal<Vec<f32>>,
 ) -> Element {
     let ctx = use_context::<PlayerContext>();
+    let loop_dragging = use_context::<LoopDragging>().0;
     let mut position_secs = use_signal(|| 0.0);
     let num_bins = 500;
+    let mut waveform_peaks = use_signal(|| vec![0.0_f32; num_bins]);
 
     let mut detail_waveform = use_signal(|| None::<DetailWaveform>);
     let mut active_detail_request = use_signal(|| None::<u64>);
@@ -801,6 +770,20 @@ pub fn WaveformBinsCanvas(
     });
 
     use_effect(move || {
+        if loop_dragging() {
+            let _ = dioxus::document::eval(
+                r#"
+                if (window.waveformAnimId) {
+                    cancelAnimationFrame(window.waveformAnimId);
+                    window.waveformAnimId = null;
+                }
+                "#,
+            );
+        }
+    });
+
+    use_effect(move || {
+        let dragging = loop_dragging();
         let current_pos = position_secs();
         let total_dur = total_duration();
 
@@ -811,7 +794,12 @@ pub fn WaveformBinsCanvas(
         };
 
         spawn(async move {
-            let eval = dioxus::document::eval(WAVEFORM_PROGRESS_JS);
+            let script = if dragging {
+                WAVEFORM_CURSOR_JS
+            } else {
+                WAVEFORM_PROGRESS_JS
+            };
+            let eval = dioxus::document::eval(script);
 
             let _ = eval.send(serde_json::json!({
                 "progress": progress,
@@ -821,6 +809,10 @@ pub fn WaveformBinsCanvas(
 
     // Перерисовка canvas при изменении пиков, позиции или зума
     use_effect(move || {
+        if loop_dragging() {
+            return;
+        }
+
         let peaks = waveform_peaks.read().clone();
         let total_dur = total_duration();
         let do_reset = reset_zoom();
