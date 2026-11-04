@@ -20,6 +20,14 @@
 
 <p align="center">
   <a href="https://github.com/iqhater/wave-player/releases"><img src="https://img.shields.io/badge/DOWNLOAD_FOR_WINDOWS-WAVE_PLAYER_SETUP-e8467d?style=for-the-badge&labelColor=55585f&logo=windows&logoColor=white" alt="Download Wave Player for Windows"></a>
+  <a href="https://alternativeto.net/software/wave-player-by-iqhater/about/?utm_source=badge&utm_medium=referral">
+    <img
+      src="https://alternativeto.net/static/badges/badge-compact-color.svg"
+      alt="Wave Player on AlternativeTo"
+      width="122"
+      height="40"
+    />
+  </a>
 </p>
 
 > [!WARNING]
@@ -58,8 +66,9 @@ Screenshots from the Windows build:
 
 ## Features
 
-- **Playback:** play, pause, seek on the waveform, adjustable speed with
-  optional pitch preservation, volume, whole-track repeat, and loop regions.
+- **Playback:** play, pause, seek on the waveform with an adaptive time ruler,
+  adjustable speed with optional pitch preservation, volume, whole-track
+  repeat, and loop regions.
 - **Real-time processing:** low-pass and high-pass filters, stereo width, pan,
   Mid/Side monitoring, and smooth parameter changes.
 - **Analysis:** waveform, BPM, musical key, beat grid, LUFS loudness, and
@@ -263,3 +272,11 @@ issue first so the approach can be discussed.
 ## License
 
 Wave Player is distributed under the MIT License. See [LICENSE](LICENSE).
+
+---
+
+<p align="center">
+  Made with Rust and a love for music.
+  <br />
+  <a href="https://github.com/iqhater">by iqhater</a>
+</p>

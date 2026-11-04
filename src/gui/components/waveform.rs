@@ -135,47 +135,12 @@ pub fn Waveform() -> Element {
     });
 
     // Time marks
-    let time_marks = {
-        if dur <= 0.0 {
-            vec![(0.0, "00:00".to_string())]
-        } else {
-            let start_secs = dur * view_start / 100.0;
-            let end_secs = dur * view_end / 100.0;
-            let range_secs = end_secs - start_secs;
-            if range_secs <= 0.0 {
-                vec![(0.0, format_time(start_secs as u32))]
-            } else {
-                let max_marks = 15;
-                let raw_step = range_secs / max_marks as f32;
-                let nice_steps = [
-                    0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0,
-                    900.0, 1800.0, 3600.0,
-                ];
-                let step = nice_steps
-                    .iter()
-                    .find(|&&s| s as f32 >= raw_step)
-                    .copied()
-                    .unwrap_or(3600.0) as f32;
-
-                // Убираем последнюю метку, если она ближе 20% к предыдущей
-                let mut marks: Vec<(f32, String)> = (0..=max_marks)
-                    .map(|i| {
-                        let secs = (start_secs + i as f32 * step).min(end_secs);
-                        let pct = ((secs - start_secs) / range_secs) * 100.0;
-                        (pct, format_time(secs as u32))
-                    })
-                    .take_while(|(pct, _)| *pct < 99.5) // не включаем последнюю метку в конце
-                    .collect();
-
-                // Если меток слишком мало — добавим последнюю явно
-                if marks.len() < 2 {
-                    marks.push((100.0, format_time(end_secs as u32)));
-                }
-
-                marks
-            }
-        }
-    };
+    let time_marks = time_marks(
+        dur,
+        view_start,
+        view_end,
+        container_rect().map_or(0.0, |(_, width)| width),
+    );
 
     // Обработчик клавиатуры: ← → перемотка на 5с, Ctrl+←/→ на 30с
     let seek = move |e: KeyboardEvent| {
@@ -243,9 +208,11 @@ pub fn Waveform() -> Element {
             },
 
             div {
-                class: "flex h-28 w-full min-w-0 items-stretch gap-2",
-            div {
-                class: "relative flex h-28 w-full min-w-0
+                class: "flex w-full min-w-0 items-start gap-2",
+                div {
+                    class: "flex min-w-0 flex-1 flex-col",
+                    div {
+                        class: "relative flex h-28 w-full min-w-0
                             items-center overflow-visible
                             rounded-2xl neumorph-sunken
                             hover:shadow",
@@ -436,32 +403,34 @@ pub fn Waveform() -> Element {
                         is_dragover_event: is_dragover_event,
                     }
                 }
-            }
-            if has_track() {
-                VolumeMeter {}
-            }
-            }
+                    }
 
-            if has_track() {
-                // Time scale
-                if show_time_markers() {
-                    div { class: "relative mt-1 h-6 w-full min-w-0
-                            select-none overflow-visible",
-                        {time_marks.into_iter().map(|(pct, label)| {
-                            rsx! {
-                                div {
-                                    class: "absolute top-0 flex
-                                        flex-col items-center",
-                                    style: "left: {pct}%; transform: translateX(-50%);",
-                                    div { class: "w-[1px] h-1.5 bg-secondary/40" }
-                                    span {
-                                        class: "mt-0.5 max-w-full truncate
-                                            whitespace-nowrap text-[12px] text-secondary/60",
-                                        "{label}"
+                    if has_track() {
+                        // Time scale
+                        if show_time_markers() {
+                            div { class: "relative mt-1 h-6 w-full min-w-0
+                                    select-none overflow-visible",
+                                {time_marks.into_iter().map(|mark| {
+                                    rsx! {
+                                        div {
+                                            class: "absolute top-0 flex flex-col items-center",
+                                            style: "left: {mark.pct}%; transform: translateX(-50%);",
+                                            div { class: "w-[1px] h-1.5 bg-secondary/40" }
+                                            span {
+                                                class: "mt-0.5 whitespace-nowrap text-[12px] text-secondary/60",
+                                                "{mark.label}"
+                                            }
+                                        }
                                     }
-                                }
+                                })}
                             }
-                        })}
+                        }
+                    }
+                }
+
+                if has_track() {
+                    div { class: "h-28 shrink-0 hidden sm:block",
+                        VolumeMeter {}
                     }
                 }
             }
@@ -473,6 +442,87 @@ fn format_time(secs: u32) -> String {
     let m = secs / 60;
     let s = secs % 60;
     format!("{:02}:{:02}", m, s)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct TimeMark {
+    pct: f32,
+    label: String,
+}
+
+/// «Круглые» интервалы шкалы времени в секундах.
+const NICE_TIME_STEPS: [f32; 16] = [
+    0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0, 900.0, 1800.0,
+    3600.0,
+];
+
+const MAX_TIME_MARKS: usize = 15;
+
+/// Минимальный зазор между соседними метками, чтобы подписи `MM:SS` не налезали.
+const TIME_MARK_MIN_SPACING_PX: f32 = 40.0;
+
+fn time_marks_limit(width_px: f32) -> usize {
+    if width_px.is_finite() && width_px > 0.0 {
+        ((width_px / TIME_MARK_MIN_SPACING_PX).floor() as usize).clamp(2, MAX_TIME_MARKS)
+    } else {
+        MAX_TIME_MARKS
+    }
+}
+
+fn time_marks(
+    duration_secs: f32,
+    view_start_pct: f32,
+    view_end_pct: f32,
+    width_px: f32,
+) -> Vec<TimeMark> {
+    if duration_secs <= 0.0 {
+        vec![TimeMark {
+            pct: 0.0,
+            label: "00:00".to_string(),
+        }]
+    } else {
+        let start_secs = duration_secs * view_start_pct / 100.0;
+        let end_secs = duration_secs * view_end_pct / 100.0;
+        let range_secs = end_secs - start_secs;
+
+        if range_secs <= 0.0 {
+            vec![TimeMark {
+                pct: 0.0,
+                label: format_time(start_secs as u32),
+            }]
+        } else {
+            let max_marks = time_marks_limit(width_px);
+            let raw_step = range_secs / max_marks as f32;
+            let step = NICE_TIME_STEPS
+                .iter()
+                .copied()
+                .find(|&s| s >= raw_step)
+                .unwrap_or(3600.0);
+
+            // Убираем последнюю метку, если она ближе 20% к предыдущей
+            let mut marks: Vec<TimeMark> = (0..=max_marks)
+                .map(|i| {
+                    let secs = (start_secs + i as f32 * step).min(end_secs);
+                    let pct = ((secs - start_secs) / range_secs * 100.0).clamp(0.0, 100.0);
+                    TimeMark {
+                        pct,
+                        label: format_time(secs as u32),
+                    }
+                })
+                .take_while(|mark| mark.pct < 99.5) // не включаем последнюю метку в конце
+                .collect();
+
+            // Если меток слишком мало — добавим последнюю явно
+            if marks.len() < 2 {
+                marks.push(TimeMark {
+                    pct: 100.0,
+                    label: format_time(end_secs as u32),
+                });
+            }
+
+            marks
+        }
+    }
 }
 
 const GRID_MIN_SPACING_PX: f32 = 30.0;
@@ -631,5 +681,108 @@ mod grid_snap_tests {
         );
 
         assert!((snapped - 8.0).abs() < 1e-4);
+    }
+}
+
+#[cfg(test)]
+mod time_marks_tests {
+    use super::{NICE_TIME_STEPS, TIME_MARK_MIN_SPACING_PX, TimeMark, time_marks};
+
+    fn assert_within_bounds(marks: &[TimeMark]) {
+        assert!(!marks.is_empty());
+        assert!(
+            marks.iter().all(|mark| (0.0..=100.0).contains(&mark.pct)),
+            "mark percentages out of bounds: {marks:?}"
+        );
+    }
+
+    fn label_secs(label: &str) -> u32 {
+        let (minutes, seconds) = label.split_once(':').unwrap();
+        minutes.parse::<u32>().unwrap() * 60 + seconds.parse::<u32>().unwrap()
+    }
+
+    #[test]
+    fn full_track_marks_cover_the_visible_range() {
+        let marks = time_marks(429.0, 0.0, 100.0, 1000.0);
+
+        assert_within_bounds(&marks);
+        assert_eq!(marks.first().unwrap().pct, 0.0);
+        assert_eq!(marks.first().unwrap().label, "00:00");
+        assert_eq!(marks.last().unwrap().label, "07:00");
+
+        for pair in marks.windows(2) {
+            let step_secs = (pair[1].pct - pair[0].pct) / 100.0 * 429.0;
+            assert!(
+                (step_secs - 30.0).abs() < 1e-3,
+                "expected a 30 s step, got {step_secs}"
+            );
+        }
+    }
+
+    #[test]
+    fn zoomed_marks_stay_within_the_visible_range() {
+        let marks = time_marks(429.0, 25.0, 75.0, 1000.0);
+
+        assert_within_bounds(&marks);
+        assert_eq!(marks.first().unwrap().pct, 0.0);
+        assert_eq!(marks.first().unwrap().label, "01:47");
+        assert_eq!(marks.last().unwrap().label, "05:17");
+
+        let visible_start = (429.0_f32 * 0.25) as u32;
+        let visible_end = (429.0_f32 * 0.75).ceil() as u32;
+        assert!(
+            marks
+                .iter()
+                .all(|mark| { (visible_start..=visible_end).contains(&label_secs(&mark.label)) })
+        );
+        assert!(marks.windows(2).all(|pair| pair[0].pct < pair[1].pct));
+    }
+
+    #[test]
+    fn zero_duration_has_a_single_mark() {
+        let marks = time_marks(0.0, 0.0, 100.0, 1000.0);
+
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0].pct, 0.0);
+        assert_eq!(marks[0].label, "00:00");
+    }
+
+    #[test]
+    fn short_track_keeps_round_steps_and_stays_in_bounds() {
+        let marks = time_marks(5.0, 0.0, 100.0, 1000.0);
+
+        assert_within_bounds(&marks);
+
+        let step_secs = (marks[1].pct - marks[0].pct) / 100.0 * 5.0;
+        assert!((step_secs - 0.5).abs() < 1e-3);
+        assert!(
+            NICE_TIME_STEPS
+                .iter()
+                .any(|&step| (step - step_secs).abs() < 1e-3),
+            "step {step_secs} is not one of the nice steps"
+        );
+    }
+
+    #[test]
+    fn normal_canvas_keeps_fine_marks() {
+        let marks = time_marks(429.0, 0.0, 100.0, 620.0);
+
+        let step_secs = (marks[1].pct - marks[0].pct) / 100.0 * 429.0;
+        assert!((step_secs - 30.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn narrow_canvas_reduces_mark_density() {
+        let duration = 429.0;
+        let wide = time_marks(duration, 0.0, 100.0, 1000.0);
+        let narrow = time_marks(duration, 0.0, 100.0, 300.0);
+
+        assert!(narrow.len() < wide.len());
+
+        let min_gap_px = narrow
+            .windows(2)
+            .map(|pair| (pair[1].pct - pair[0].pct) / 100.0 * 300.0)
+            .fold(f32::INFINITY, f32::min);
+        assert!(min_gap_px >= TIME_MARK_MIN_SPACING_PX);
     }
 }
