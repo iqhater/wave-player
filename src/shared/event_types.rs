@@ -2,6 +2,7 @@ use crate::backend::metadata::TrackMetadata;
 use crate::shared::store_types::{AppConfig, RecentTrack, Track};
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_broadcast::Sender as BroadcastSender;
 
@@ -87,6 +88,13 @@ pub enum PlayerEvent {
         start_bin: usize,
         total_bins: usize,
     }, */
+    /// Finest min/max peak level of the current track, encoded as base64.
+    WaveformPeaksReady {
+        sample_rate: u32,
+        total_frames: usize,
+        bin_frames: usize,
+        encoded: Arc<str>,
+    },
     WaveformDetailReady {
         request_id: u64,
         start_frame: usize,

@@ -9,9 +9,12 @@ use ebur128::{EbuR128, Mode};
 use rodio::Source;
 use serde::{Deserialize, Serialize};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+
 use super::bpm_key::{BPM_KEY_VERSION, BpmKeyResult, analyze_bpm_key};
-use crate::backend::decoder::open_file_with_decoder;
-use crate::backend::waveform_cache::{self, SourceStamp};
+use crate::backend::decoder::{SeekAccuracy, open_file_with_decoder};
+use crate::backend::waveform_cache::{self, CachedWaveform, CachedWaveformPeaks, SourceStamp};
 use crate::shared::command_types::CachedTrackAnalysis;
 use crate::shared::command_types::StoreCommand;
 use crate::shared::event_types::{PlayerEvent, StatusSender, WaveformEnvelope};
@@ -23,6 +26,19 @@ pub(crate) const ANALYSIS_DIR: &str = "analysis";
 const OVERVIEW_BINS: usize = 500;
 const MAX_DETAIL_POINTS: usize = 16_384;
 const CHECK_INTERVAL: usize = 4096;
+
+pub(crate) const PEAK_BIN_FRAMES: usize = 128;
+pub(crate) const MAX_PEAK_BINS: usize = 4_000_000;
+
+/// Finest level of the waveform peak pyramid built during track analysis.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct WaveformPeaks {
+    pub(crate) sample_rate: u32,
+    pub(crate) total_frames: usize,
+    pub(crate) bin_frames: usize,
+    /// Packed `min`/`max` pairs for each bin.
+    pub(crate) bins: Vec<i8>,
+}
 
 type AnalysisResult<T> = Result<T, Failure>;
 
@@ -131,6 +147,7 @@ pub(crate) struct AnalysisService {
     details: Latest<DetailJob>,
     output_rx: flume::Receiver<Output>,
     overview: Option<Vec<f32>>,
+    waveform_peaks: Option<PlayerEvent>,
 }
 
 impl AnalysisService {
@@ -171,6 +188,7 @@ impl AnalysisService {
             details,
             output_rx,
             overview: None,
+            waveform_peaks: None,
         }
     }
 
@@ -178,6 +196,7 @@ impl AnalysisService {
         self.track_epoch.fetch_add(1, Ordering::AcqRel);
         self.detail_epoch.fetch_add(1, Ordering::AcqRel);
         self.overview = None;
+        self.waveform_peaks = None;
     }
 
     fn track_token(&self) -> Token {
@@ -241,8 +260,15 @@ impl AnalysisService {
                 continue;
             }
 
-            if let PlayerEvent::WaveformChunkReady { chunk, .. } = &output.event {
-                self.overview = Some(chunk.clone());
+            match &output.event {
+                PlayerEvent::WaveformChunkReady { chunk, .. } => {
+                    self.overview = Some(chunk.clone());
+                }
+                PlayerEvent::WaveformPeaksReady { .. } => {
+                    // Keep the payload for replay after the component remounts.
+                    self.waveform_peaks = Some(output.event.clone());
+                }
+                _ => {}
             }
 
             // Publication and track switching run on the same engine thread.
@@ -253,6 +279,10 @@ impl AnalysisService {
     pub(crate) fn replay_overview(&self, status_tx: &StatusSender) {
         if let Some(peaks) = &self.overview {
             let _ = status_tx.try_broadcast(overview_event(peaks));
+        }
+
+        if let Some(peaks) = &self.waveform_peaks {
+            let _ = status_tx.try_broadcast(peaks.clone());
         }
     }
 }
@@ -298,6 +328,10 @@ struct CachedAnalysis {
     #[serde(skip)]
     waveform: Option<Vec<f32>>,
 
+    // The finest peak pyramid follows the waveform cache file.
+    #[serde(skip)]
+    waveform_peaks: Option<WaveformPeaks>,
+
     // The persistent reference belongs to tracks.waveform_cache_path.
     #[serde(skip)]
     waveform_cache_path: Option<PathBuf>,
@@ -313,6 +347,7 @@ impl CachedAnalysis {
         Self {
             source,
             waveform: None,
+            waveform_peaks: None,
             waveform_cache_path: None,
             bpm_key: None,
             bpm_key_version: BPM_KEY_VERSION,
@@ -321,7 +356,10 @@ impl CachedAnalysis {
     }
 
     fn complete(&self) -> bool {
-        self.waveform.is_some() && self.bpm_key.is_some() && self.loudness.is_some()
+        self.waveform.is_some()
+            && self.waveform_peaks.is_some()
+            && self.bpm_key.is_some()
+            && self.loudness.is_some()
     }
 
     fn merge(&mut self, other: Self) {
@@ -349,15 +387,21 @@ fn persist(
         return Err(Failure::Cancelled);
     }
 
-    if cache.waveform_cache_path.is_none() {
-        if let Some(peaks) = &cache.waveform {
-            match waveform_cache::save(cache_dir, &cache.source, peaks) {
-                Ok(relative) => {
-                    cache.waveform_cache_path = Some(relative);
-                }
-                Err(error) => {
-                    eprintln!("failed to save waveform for {}: {error}", path.display());
-                }
+    if cache.waveform_cache_path.is_none()
+        && let (Some(peaks), Some(waveform_peaks)) =
+            (cache.waveform.as_ref(), cache.waveform_peaks.as_ref())
+    {
+        let waveform = CachedWaveform {
+            peaks: peaks.clone(),
+            waveform_peaks: Some(cached_waveform_peaks(waveform_peaks)),
+        };
+
+        match waveform_cache::save(cache_dir, &cache.source, &waveform) {
+            Ok(relative) => {
+                cache.waveform_cache_path = Some(relative);
+            }
+            Err(error) => {
+                eprintln!("failed to save waveform for {}: {error}", path.display());
             }
         }
     }
@@ -460,8 +504,9 @@ fn load_cache(
         job.token.check()?;
 
         match waveform_cache::load(cache_dir, &relative, &cache.source, OVERVIEW_BINS) {
-            Ok(Some(peaks)) => {
-                cache.waveform = Some(peaks);
+            Ok(Some(cached)) => {
+                cache.waveform = Some(cached.peaks);
+                cache.waveform_peaks = cached.waveform_peaks.map(waveform_peaks_from_cache);
                 cache.waveform_cache_path = Some(relative);
                 break;
             }
@@ -556,6 +601,36 @@ fn overview_event(peaks: &[f32]) -> PlayerEvent {
     }
 }
 
+fn cached_waveform_peaks(peaks: &WaveformPeaks) -> CachedWaveformPeaks {
+    CachedWaveformPeaks {
+        sample_rate: peaks.sample_rate,
+        total_frames: peaks.total_frames as u64,
+        bin_frames: peaks.bin_frames as u32,
+        bins: peaks.bins.clone(),
+    }
+}
+
+fn waveform_peaks_from_cache(peaks: CachedWaveformPeaks) -> WaveformPeaks {
+    WaveformPeaks {
+        sample_rate: peaks.sample_rate,
+        total_frames: peaks.total_frames as usize,
+        bin_frames: peaks.bin_frames as usize,
+        bins: peaks.bins,
+    }
+}
+
+fn waveform_peaks_event(peaks: &WaveformPeaks) -> PlayerEvent {
+    let bytes: Vec<u8> = peaks.bins.iter().map(|bin| *bin as u8).collect();
+    let encoded: Arc<str> = STANDARD.encode(bytes).into();
+
+    PlayerEvent::WaveformPeaksReady {
+        sample_rate: peaks.sample_rate,
+        total_frames: peaks.total_frames,
+        bin_frames: peaks.bin_frames,
+        encoded,
+    }
+}
+
 fn bpm_event(result: &BpmKeyResult) -> PlayerEvent {
     PlayerEvent::BpmKeyDetected {
         bpm: result.bpm,
@@ -589,6 +664,10 @@ fn analyze_track(
         emit(output_tx, &job.token, overview_event(peaks))?;
     }
 
+    if let Some(peaks) = &cache.waveform_peaks {
+        emit(output_tx, &job.token, waveform_peaks_event(peaks))?;
+    }
+
     if let Some(result) = &cache.loudness {
         emit(output_tx, &job.token, loudness_event(result))?;
     }
@@ -602,14 +681,20 @@ fn analyze_track(
     }
 
     let need_waveform = cache.waveform.is_none();
+    let need_peaks = cache.waveform_peaks.is_none();
     let need_loudness = cache.loudness.is_none();
 
-    if need_waveform || need_loudness {
-        let (peaks, integrated_lufs) = decode_overview(job, need_waveform, need_loudness)?;
+    if need_waveform || need_peaks || need_loudness {
+        let (overview, waveform_peaks, integrated_lufs) =
+            decode_overview(job, need_waveform, need_peaks, need_loudness)?;
 
         if need_waveform {
-            cache.waveform = Some(peaks);
+            cache.waveform = Some(overview);
             cache.waveform_cache_path = None;
+        }
+
+        if need_peaks {
+            cache.waveform_peaks = waveform_peaks;
         }
 
         if need_loudness {
@@ -619,16 +704,16 @@ fn analyze_track(
         // Completed stages remain reusable even if the track was switched.
         persist(&job.path, cache_dir, store_tx, &mut cache)?;
 
-        if need_waveform {
-            if let Some(peaks) = &cache.waveform {
-                emit(output_tx, &job.token, overview_event(peaks))?;
-            }
+        if need_waveform && let Some(peaks) = &cache.waveform {
+            emit(output_tx, &job.token, overview_event(peaks))?;
         }
 
-        if need_loudness {
-            if let Some(result) = &cache.loudness {
-                emit(output_tx, &job.token, loudness_event(result))?;
-            }
+        if need_peaks && let Some(peaks) = &cache.waveform_peaks {
+            emit(output_tx, &job.token, waveform_peaks_event(peaks))?;
+        }
+
+        if need_loudness && let Some(result) = &cache.loudness {
+            emit(output_tx, &job.token, loudness_event(result))?;
         }
     }
 
@@ -668,11 +753,12 @@ fn read_frame(decoder: &mut impl Iterator<Item = f32>, frame: &mut [f32]) -> boo
 fn decode_overview(
     job: &TrackJob,
     need_waveform: bool,
+    need_peaks: bool,
     need_loudness: bool,
-) -> AnalysisResult<(Vec<f32>, Option<f32>)> {
+) -> AnalysisResult<(Vec<f32>, Option<WaveformPeaks>, Option<f32>)> {
     job.token.check()?;
 
-    let mut decoder = open_file_with_decoder(&job.path).map_err(failed)?;
+    let mut decoder = open_file_with_decoder(&job.path, SeekAccuracy::Coarse).map_err(failed)?;
 
     let channels = decoder.channels().get() as usize;
     let sample_rate = decoder.sample_rate().get();
@@ -684,6 +770,9 @@ fn decode_overview(
     } else {
         Vec::new()
     };
+
+    let mut peak_builder = need_peaks
+        .then(|| WaveformPeakBuilder::new(peak_bin_frames(estimated_frames), MAX_PEAK_BINS));
 
     let mut meter = if need_loudness {
         Some(EbuR128::new(channels as u32, sample_rate, Mode::all()).map_err(failed)?)
@@ -698,13 +787,23 @@ fn decode_overview(
     let mut frame_index = 0_usize;
 
     loop {
-        if frame_index % CHECK_INTERVAL == 0 {
+        if frame_index.is_multiple_of(CHECK_INTERVAL) {
             job.token.check()?;
             thread::yield_now();
         }
 
         if !read_frame(&mut decoder, &mut frame) {
             break;
+        }
+
+        let mut frame_peak = 0.0_f32;
+        let mut frame_min = f32::MAX;
+        let mut frame_max = f32::MIN;
+
+        for sample in &frame {
+            frame_peak = frame_peak.max(sample.abs());
+            frame_min = frame_min.min(*sample);
+            frame_max = frame_max.max(*sample);
         }
 
         if need_waveform {
@@ -714,12 +813,11 @@ fn decode_overview(
                 .unwrap_or(0)
                 .min(OVERVIEW_BINS - 1);
 
-            let peak = frame
-                .iter()
-                .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
-                .clamp(0.0, 1.0);
+            peaks[bin] = peaks[bin].max(frame_peak.clamp(0.0, 1.0));
+        }
 
-            peaks[bin] = peaks[bin].max(peak);
+        if let Some(builder) = peak_builder.as_mut() {
+            builder.push(frame_min, frame_max);
         }
 
         if let Some(meter) = meter.as_mut() {
@@ -738,10 +836,10 @@ fn decode_overview(
         return Err(Failure::Failed("audio contains no samples".into()));
     }
 
-    if let Some(meter) = meter.as_mut() {
-        if !buffer.is_empty() {
-            meter.add_frames_f32(&buffer).map_err(failed)?;
-        }
+    if let Some(meter) = meter.as_mut()
+        && !buffer.is_empty()
+    {
+        meter.add_frames_f32(&buffer).map_err(failed)?;
     }
 
     let integrated_lufs = meter
@@ -749,13 +847,106 @@ fn decode_overview(
         .map(|value| value as f32)
         .filter(|value| value.is_finite());
 
-    Ok((peaks, integrated_lufs))
+    let waveform_peaks = peak_builder.and_then(|builder| builder.finish(sample_rate, frame_index));
+
+    Ok((peaks, waveform_peaks, integrated_lufs))
+}
+
+fn peak_bin_frames(total_frames: usize) -> usize {
+    let required = total_frames.div_ceil(MAX_PEAK_BINS).max(1);
+
+    PEAK_BIN_FRAMES.max(required.next_power_of_two())
+}
+
+struct WaveformPeakBuilder {
+    bin_frames: usize,
+    max_bins: usize,
+    frame_index: usize,
+    bins: Vec<i8>,
+    current_min: f32,
+    current_max: f32,
+    has_current: bool,
+    dropped: bool,
+}
+
+impl WaveformPeakBuilder {
+    fn new(bin_frames: usize, max_bins: usize) -> Self {
+        Self {
+            bin_frames: bin_frames.max(1),
+            max_bins,
+            frame_index: 0,
+            bins: Vec::new(),
+            current_min: 0.0,
+            current_max: 0.0,
+            has_current: false,
+            dropped: false,
+        }
+    }
+
+    fn push(&mut self, min: f32, max: f32) {
+        if !self.dropped && self.has_current && self.frame_index.is_multiple_of(self.bin_frames) {
+            self.flush_bin();
+        }
+
+        if !self.dropped {
+            if self.has_current {
+                self.current_min = self.current_min.min(min);
+                self.current_max = self.current_max.max(max);
+            } else {
+                self.current_min = min;
+                self.current_max = max;
+                self.has_current = true;
+            }
+        }
+
+        self.frame_index += 1;
+    }
+
+    fn flush_bin(&mut self) {
+        if !self.has_current {
+            return;
+        }
+
+        if self.bins.len() / 2 >= self.max_bins {
+            self.dropped = true;
+            self.bins.clear();
+            self.has_current = false;
+            return;
+        }
+
+        let min = quantize_peak(self.current_min);
+        let max = quantize_peak(self.current_max);
+        let (min, max) = if min > max { (0, 0) } else { (min, max) };
+
+        self.bins.push(min);
+        self.bins.push(max);
+        self.has_current = false;
+    }
+
+    fn finish(mut self, sample_rate: u32, total_frames: usize) -> Option<WaveformPeaks> {
+        self.flush_bin();
+
+        if self.dropped || total_frames == 0 {
+            return None;
+        }
+
+        Some(WaveformPeaks {
+            sample_rate,
+            total_frames,
+            bin_frames: self.bin_frames,
+            bins: self.bins,
+        })
+    }
+}
+
+fn quantize_peak(value: f32) -> i8 {
+    (value.clamp(-1.0, 1.0) * 127.0).round() as i8
 }
 
 fn decode_mono(job: &TrackJob) -> AnalysisResult<(Vec<f32>, u32)> {
     job.token.check()?;
 
-    let decoder = open_file_with_decoder(&job.path).map_err(failed)?;
+    let decoder = open_file_with_decoder(&job.path, SeekAccuracy::Coarse).map_err(failed)?;
 
     let channels = decoder.channels().get() as usize;
     let sample_rate = decoder.sample_rate().get();
@@ -800,7 +991,7 @@ fn analyze_detail(job: &DetailJob, output_tx: &flume::Sender<Output>) -> Analysi
         return Ok(());
     }
 
-    let mut decoder = open_file_with_decoder(&job.path).map_err(failed)?;
+    let mut decoder = open_file_with_decoder(&job.path, SeekAccuracy::Accurate).map_err(failed)?;
 
     let channels = decoder.channels().get() as usize;
     let sample_rate = decoder.sample_rate().get();
@@ -819,6 +1010,52 @@ fn analyze_detail(job: &DetailJob, output_tx: &flume::Sender<Output>) -> Analysi
 
     let point_count = job.points.min(frame_count).min(MAX_DETAIL_POINTS);
 
+    let seek_position = Duration::from_secs_f64(start_frame as f64 / sample_rate as f64);
+
+    let seek_succeeded = decoder.try_seek(seek_position).is_ok();
+
+    // A decoder may be left in an undefined state after a failed seek, so the
+    // fallback path always starts from a freshly opened stream.
+    if !seek_succeeded {
+        decoder = open_file_with_decoder(&job.path, SeekAccuracy::Accurate).map_err(failed)?;
+    }
+
+    let (points, _frames_read) = decode_detail_window(
+        job,
+        &mut decoder,
+        channels,
+        start_frame,
+        end_frame,
+        frame_count,
+        point_count,
+        seek_succeeded,
+    )?;
+
+    emit(
+        output_tx,
+        &job.token,
+        PlayerEvent::WaveformDetailReady {
+            request_id: job.request_id,
+            start_frame,
+            end_frame,
+            total_frames,
+            sample_rate,
+            points,
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decode_detail_window(
+    job: &DetailJob,
+    decoder: &mut impl Iterator<Item = f32>,
+    channels: usize,
+    start_frame: usize,
+    end_frame: usize,
+    frame_count: usize,
+    point_count: usize,
+    seek_succeeded: bool,
+) -> AnalysisResult<(Vec<WaveformEnvelope>, usize)> {
     let mut points = vec![
         WaveformEnvelope {
             min: 1.0,
@@ -828,16 +1065,21 @@ fn analyze_detail(job: &DetailJob, output_tx: &flume::Sender<Output>) -> Analysi
     ];
 
     let mut frame = vec![0.0_f32; channels];
+    let mut frames_read = 0_usize;
 
-    for frame_index in 0..end_frame {
-        if frame_index % CHECK_INTERVAL == 0 {
+    let first_frame = if seek_succeeded { start_frame } else { 0 };
+
+    for frame_index in first_frame..end_frame {
+        if frame_index.is_multiple_of(CHECK_INTERVAL) {
             job.token.check()?;
             thread::yield_now();
         }
 
-        if !read_frame(&mut decoder, &mut frame) {
+        if !read_frame(decoder, &mut frame) {
             break;
         }
+
+        frames_read += 1;
 
         if frame_index < start_frame {
             continue;
@@ -864,18 +1106,7 @@ fn analyze_detail(job: &DetailJob, output_tx: &flume::Sender<Output>) -> Analysi
         }
     }
 
-    emit(
-        output_tx,
-        &job.token,
-        PlayerEvent::WaveformDetailReady {
-            request_id: job.request_id,
-            start_frame,
-            end_frame,
-            total_frames,
-            sample_rate,
-            points,
-        },
-    )
+    Ok((points, frames_read))
 }
 
 #[cfg(test)]
@@ -955,6 +1186,7 @@ mod tests {
                 modified_nanos: 0,
             },
             waveform: None,
+            waveform_peaks: None,
             waveform_cache_path: None,
             bpm_key: None,
             bpm_key_version: BPM_KEY_VERSION,
@@ -1075,5 +1307,469 @@ mod tests {
         let value = serde_json::to_value(cache).unwrap();
 
         assert!(value.get("waveform").is_none() && value.get("waveform_cache_path").is_none());
+    }
+
+    fn test_token() -> Token {
+        let epoch = Arc::new(AtomicU64::new(0));
+
+        Token {
+            track_epoch: epoch,
+            track_generation: 0,
+            detail: None,
+        }
+    }
+
+    fn write_test_wav(
+        name: &str,
+        sample_rate: u32,
+        frames: usize,
+        value: impl Fn(usize) -> f32,
+    ) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "wave_player_{name}_{}_{}.wav",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+
+        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+
+        for frame in 0..frames {
+            let sample = (value(frame).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+            writer.write_sample(sample).unwrap();
+        }
+
+        writer.finalize().unwrap();
+        path
+    }
+
+    #[test]
+    fn peak_bin_frames_should_stay_fine_for_normal_tracks() {
+        let five_minutes = 5 * 60 * 44_100;
+        let one_hour = 60 * 60 * 44_100;
+
+        assert_eq!(peak_bin_frames(five_minutes), PEAK_BIN_FRAMES);
+        assert_eq!(five_minutes.div_ceil(PEAK_BIN_FRAMES), 103_360);
+
+        assert_eq!(peak_bin_frames(one_hour), PEAK_BIN_FRAMES);
+        assert_eq!(one_hour.div_ceil(PEAK_BIN_FRAMES), 1_240_313);
+    }
+
+    #[test]
+    fn peak_bin_frames_should_grow_for_extremely_long_tracks() {
+        let ten_hours = 10 * 60 * 60 * 44_100;
+        let bin_frames = peak_bin_frames(ten_hours);
+
+        assert_eq!(bin_frames, 512);
+        assert!(bin_frames.is_power_of_two());
+        assert!(ten_hours.div_ceil(bin_frames) <= MAX_PEAK_BINS);
+    }
+
+    #[test]
+    fn peak_builder_should_quantize_min_max_pairs() {
+        let mut builder = WaveformPeakBuilder::new(2, MAX_PEAK_BINS);
+
+        builder.push(-0.75, 0.75);
+        builder.push(-0.5, 0.5);
+        builder.push(0.25, 0.25);
+
+        let peaks = builder.finish(8_000, 3).unwrap();
+
+        assert_eq!(peaks.bin_frames, 2);
+        assert_eq!(peaks.total_frames, 3);
+        assert_eq!(peaks.bins, vec![-95, 95, 32, 32]);
+    }
+
+    #[test]
+    fn peak_builder_should_keep_pyramid_below_limit() {
+        let mut builder = WaveformPeakBuilder::new(1, 3);
+
+        for _ in 0..3 {
+            builder.push(-0.5, 0.5);
+        }
+
+        let peaks = builder.finish(44_100, 3).unwrap();
+
+        assert_eq!(peaks.bins.len(), 6);
+    }
+
+    #[test]
+    fn peak_builder_should_drop_pyramid_above_bin_limit() {
+        let mut builder = WaveformPeakBuilder::new(1, 2);
+
+        for _ in 0..3 {
+            builder.push(-0.5, 0.5);
+        }
+
+        assert!(builder.finish(44_100, 3).is_none());
+    }
+
+    #[test]
+    fn decode_overview_should_build_overview_and_peak_pyramid_in_one_pass() {
+        let sample_rate = 8_000;
+        let total_frames = 4_000;
+        let path = write_test_wav("overview", sample_rate, total_frames, |frame| match frame {
+            500 => 0.75,
+            501 => -0.75,
+            _ => 0.0,
+        });
+
+        let job = TrackJob {
+            path: path.clone(),
+            duration: Duration::from_secs_f32(total_frames as f32 / sample_rate as f32),
+            token: test_token(),
+            force: false,
+        };
+
+        let (overview, peaks, loudness) = decode_overview(&job, true, true, false).unwrap();
+        let peaks = peaks.expect("peak pyramid should be built");
+
+        assert_eq!(overview.len(), OVERVIEW_BINS);
+        assert!(overview.iter().any(|peak| *peak > 0.5));
+        assert!(loudness.is_none());
+
+        assert_eq!(peaks.sample_rate, sample_rate);
+        assert_eq!(peaks.total_frames, total_frames);
+        assert_eq!(peaks.bin_frames, PEAK_BIN_FRAMES);
+        assert_eq!(peaks.bins.len(), total_frames.div_ceil(PEAK_BIN_FRAMES) * 2);
+        assert_eq!((peaks.bins[6], peaks.bins[7]), (-95, 95));
+
+        let event = overview_event(&overview);
+        let PlayerEvent::WaveformChunkReady {
+            chunk,
+            start_bin,
+            total_bins,
+        } = event
+        else {
+            panic!("overview event variant changed");
+        };
+
+        assert_eq!(
+            (start_bin, total_bins, chunk.len()),
+            (0, OVERVIEW_BINS, 500)
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn waveform_peaks_payload_should_roundtrip_base64() {
+        let peaks = WaveformPeaks {
+            sample_rate: 48_000,
+            total_frames: 10,
+            bin_frames: PEAK_BIN_FRAMES,
+            bins: vec![-127, 127, -10, 20, 0, 0],
+        };
+
+        let event = waveform_peaks_event(&peaks);
+        let PlayerEvent::WaveformPeaksReady {
+            sample_rate,
+            total_frames,
+            bin_frames,
+            encoded,
+        } = event
+        else {
+            panic!("peak event variant changed");
+        };
+
+        assert_eq!((sample_rate, total_frames, bin_frames), (48_000, 10, 128));
+
+        let bytes = STANDARD.decode(encoded.as_bytes()).unwrap();
+        let decoded: Vec<i8> = bytes.iter().map(|byte| *byte as i8).collect();
+
+        assert_eq!(decoded, peaks.bins);
+    }
+
+    #[test]
+    fn peak_event_clone_should_share_encoded_buffer() {
+        let peaks = WaveformPeaks {
+            sample_rate: 48_000,
+            total_frames: 10,
+            bin_frames: PEAK_BIN_FRAMES,
+            bins: vec![-127, 127],
+        };
+
+        let event = waveform_peaks_event(&peaks);
+        let cloned = event.clone();
+
+        let (
+            PlayerEvent::WaveformPeaksReady { encoded: left, .. },
+            PlayerEvent::WaveformPeaksReady { encoded: right, .. },
+        ) = (&event, &cloned)
+        else {
+            panic!("peak event variant changed");
+        };
+
+        assert!(Arc::ptr_eq(left, right));
+    }
+
+    #[test]
+    fn replay_should_resend_overview_and_peak_pyramid() {
+        let (status_tx, mut status_rx) = async_broadcast::broadcast(8);
+        let (_output_tx, output_rx) = flume::bounded(8);
+
+        let peaks = WaveformPeaks {
+            sample_rate: 48_000,
+            total_frames: 10,
+            bin_frames: PEAK_BIN_FRAMES,
+            bins: vec![-127, 127],
+        };
+
+        let service = AnalysisService {
+            track_epoch: Arc::new(AtomicU64::new(0)),
+            detail_epoch: Arc::new(AtomicU64::new(0)),
+            tracks: Latest::new(|_job: TrackJob| {}),
+            details: Latest::new(|_job: DetailJob| {}),
+            output_rx,
+            overview: Some(vec![0.5; OVERVIEW_BINS]),
+            waveform_peaks: Some(waveform_peaks_event(&peaks)),
+        };
+
+        service.replay_overview(&status_tx);
+
+        let first = status_rx.try_recv().unwrap();
+        let second = status_rx.try_recv().unwrap();
+
+        assert!(matches!(first, PlayerEvent::WaveformChunkReady { .. }));
+        assert!(matches!(second, PlayerEvent::WaveformPeaksReady { .. }));
+    }
+
+    #[test]
+    fn waveform_peaks_should_roundtrip_cache_conversion() {
+        let peaks = WaveformPeaks {
+            sample_rate: 44_100,
+            total_frames: 128_000,
+            bin_frames: PEAK_BIN_FRAMES,
+            bins: vec![-127, 127, -10, 20],
+        };
+
+        let cached = cached_waveform_peaks(&peaks);
+
+        assert_eq!(cached.sample_rate, peaks.sample_rate);
+        assert_eq!(cached.total_frames as usize, peaks.total_frames);
+        assert_eq!(cached.bin_frames as usize, peaks.bin_frames);
+        assert_eq!(cached.bins, peaks.bins);
+
+        let restored = waveform_peaks_from_cache(cached);
+
+        assert_eq!(restored, peaks);
+    }
+
+    #[test]
+    fn publish_should_store_overview_and_peak_payload_for_replay() {
+        let (output_tx, output_rx) = flume::bounded(8);
+        let (status_tx, mut status_rx) = async_broadcast::broadcast(8);
+
+        let peaks = WaveformPeaks {
+            sample_rate: 44_100,
+            total_frames: 128_000,
+            bin_frames: PEAK_BIN_FRAMES,
+            bins: vec![-127, 127],
+        };
+
+        let mut service = AnalysisService {
+            track_epoch: Arc::new(AtomicU64::new(0)),
+            detail_epoch: Arc::new(AtomicU64::new(0)),
+            tracks: Latest::new(|_job: TrackJob| {}),
+            details: Latest::new(|_job: DetailJob| {}),
+            output_rx,
+            overview: None,
+            waveform_peaks: None,
+        };
+
+        output_tx
+            .send(Output {
+                token: test_token(),
+                event: overview_event(&[0.5; OVERVIEW_BINS]),
+            })
+            .unwrap();
+
+        output_tx
+            .send(Output {
+                token: test_token(),
+                event: waveform_peaks_event(&peaks),
+            })
+            .unwrap();
+
+        service.publish(&status_tx);
+
+        assert!(service.overview.is_some());
+        assert!(matches!(
+            service.waveform_peaks,
+            Some(PlayerEvent::WaveformPeaksReady { .. })
+        ));
+        assert!(matches!(
+            status_rx.try_recv().unwrap(),
+            PlayerEvent::WaveformChunkReady { .. }
+        ));
+        assert!(matches!(
+            status_rx.try_recv().unwrap(),
+            PlayerEvent::WaveformPeaksReady { .. }
+        ));
+    }
+
+    fn detail_job(path: PathBuf, start: Duration, end: Duration) -> DetailJob {
+        DetailJob {
+            path,
+            duration: Duration::from_secs(4),
+            request_id: 7,
+            start,
+            end,
+            points: 512,
+            token: test_token(),
+        }
+    }
+
+    #[test]
+    fn analyze_detail_should_emit_aligned_window_event() {
+        let sample_rate = 8_000_usize;
+        let total_frames = 4 * sample_rate;
+        let marker = 2 * sample_rate + 1_234;
+        let path = write_test_wav(
+            "analyze_detail",
+            sample_rate as u32,
+            total_frames,
+            |frame| match frame {
+                frame if frame == marker => 0.8,
+                _ => 0.0,
+            },
+        );
+
+        let job = detail_job(path.clone(), Duration::from_secs(2), Duration::from_secs(3));
+        let (output_tx, output_rx) = flume::bounded(8);
+
+        analyze_detail(&job, &output_tx).unwrap();
+
+        let output = output_rx.try_recv().unwrap();
+        let PlayerEvent::WaveformDetailReady {
+            request_id,
+            start_frame,
+            end_frame,
+            total_frames: emitted_total_frames,
+            sample_rate: emitted_sample_rate,
+            points,
+        } = output.event
+        else {
+            panic!("detail event variant changed");
+        };
+
+        assert_eq!(request_id, 7);
+        assert_eq!(start_frame, 2 * sample_rate);
+        assert_eq!(end_frame, 3 * sample_rate);
+        assert_eq!(emitted_total_frames, total_frames);
+        assert_eq!(emitted_sample_rate, sample_rate as u32);
+        assert_eq!(points.len(), 512);
+
+        let point_index = (marker - start_frame) * points.len() / (end_frame - start_frame);
+
+        assert!(points[point_index].max > 0.7);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn detail_window_should_decode_only_the_requested_frames() {
+        let sample_rate = 8_000_usize;
+        let total_frames = 4 * sample_rate;
+        let marker = 2 * sample_rate + 1_234;
+        let path = write_test_wav(
+            "detail",
+            sample_rate as u32,
+            total_frames,
+            |frame| match frame {
+                frame if frame == marker => 0.8,
+                frame if frame == marker + 1 => -0.6,
+                _ => 0.0,
+            },
+        );
+
+        let job = detail_job(path.clone(), Duration::from_secs(2), Duration::from_secs(3));
+
+        let start_frame = 2 * sample_rate;
+        let end_frame = 3 * sample_rate;
+        let frame_count = sample_rate;
+        let point_count = 512;
+
+        let mut decoder = open_file_with_decoder(&path, SeekAccuracy::Accurate).unwrap();
+        let seek_succeeded = decoder.try_seek(Duration::from_secs(2)).is_ok();
+
+        assert!(seek_succeeded, "WAV decoder should support accurate seek");
+
+        let (points, frames_read) = decode_detail_window(
+            &job,
+            &mut decoder,
+            1,
+            start_frame,
+            end_frame,
+            frame_count,
+            point_count,
+            seek_succeeded,
+        )
+        .unwrap();
+
+        assert_eq!(frames_read, frame_count);
+        assert_eq!(points.len(), point_count);
+
+        let point_index = (marker - start_frame) * point_count / frame_count;
+
+        assert!(points[point_index].max > 0.7);
+        assert!(points[point_index].min > -0.1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn detail_window_fallback_should_align_with_overview() {
+        let sample_rate = 8_000_usize;
+        let total_frames = 4 * sample_rate;
+        let marker = 2 * sample_rate + 1_234;
+        let path = write_test_wav(
+            "detail_fallback",
+            sample_rate as u32,
+            total_frames,
+            |frame| match frame {
+                frame if frame == marker => 0.8,
+                frame if frame == marker + 1 => -0.6,
+                _ => 0.0,
+            },
+        );
+
+        let job = detail_job(path.clone(), Duration::from_secs(2), Duration::from_secs(3));
+
+        let start_frame = 2 * sample_rate;
+        let end_frame = 3 * sample_rate;
+        let frame_count = sample_rate;
+        let point_count = 512;
+
+        let mut decoder = open_file_with_decoder(&path, SeekAccuracy::Accurate).unwrap();
+
+        let (points, frames_read) = decode_detail_window(
+            &job,
+            &mut decoder,
+            1,
+            start_frame,
+            end_frame,
+            frame_count,
+            point_count,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(frames_read, end_frame);
+
+        let point_index = (marker - start_frame) * point_count / frame_count;
+
+        assert!(points[point_index].max > 0.7);
+
+        let _ = std::fs::remove_file(path);
     }
 }

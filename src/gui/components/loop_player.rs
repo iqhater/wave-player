@@ -6,9 +6,13 @@ use crate::shared::command_types::PlayerCommand;
 use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(crate) const MIN_LOOP_LENGTH: f32 = 0.5;
+
+const VIEWPORT_SYNC_INTERVAL: Duration = Duration::from_millis(50);
+const VIEWPORT_SYNC_DELAY: Duration = Duration::from_millis(60);
+const DETAIL_REQUEST_DELAY: Duration = Duration::from_millis(80);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct LoopBounds {
@@ -214,6 +218,12 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
     let mut exported_path = use_signal(|| None::<String>);
 
     let mut container_width = use_signal(|| 600.0f32);
+
+    let mut viewport_synced_at = use_signal(|| None::<Instant>);
+    let mut viewport_pending = use_signal(|| None::<(f32, f32)>);
+    let mut viewport_generation = use_signal(|| 0_u64);
+    let mut detail_generation = use_signal(|| 0_u64);
+    let mut next_detail_request = use_signal(|| 0_u64);
 
     let zoom_factor = zoom().max(1.0);
     let view_center_value = view_center();
@@ -468,8 +478,87 @@ pub fn LoopPlayer(total_duration: f32, zoom: Signal<f32>, mut view_center: Signa
                             let center_percent =
                                 (start_fraction + visible_fraction / 2.0) * 100.0;
 
-                            zoom.set(new_zoom);
-                            view_center.set(center_percent.clamp(0.0, 100.0));
+                            let center_percent = center_percent.clamp(0.0, 100.0);
+                            let detail = data
+                                .get("detail")
+                                .filter(|value| !value.is_null())
+                                .cloned();
+
+                            let now = Instant::now();
+                            let should_sync = viewport_synced_at()
+                                .is_none_or(|last| now.duration_since(last) >= VIEWPORT_SYNC_INTERVAL);
+
+                            let generation = viewport_generation.with_mut(|value| {
+                                *value = value.wrapping_add(1);
+                                *value
+                            });
+
+                            if should_sync {
+                                viewport_synced_at.set(Some(now));
+                                viewport_pending.set(None);
+                                zoom.set(new_zoom);
+                                view_center.set(center_percent);
+                            } else {
+                                viewport_pending.set(Some((new_zoom, center_percent)));
+                            }
+
+                            spawn(async move {
+                                tokio::time::sleep(VIEWPORT_SYNC_DELAY).await;
+
+                                if viewport_generation() != generation {
+                                    return;
+                                }
+
+                                let pending = viewport_pending();
+
+                                viewport_pending.set(None);
+                                viewport_synced_at.set(Some(Instant::now()));
+
+                                if let Some((pending_zoom, pending_center)) = pending {
+                                    zoom.set(pending_zoom);
+                                    view_center.set(pending_center);
+                                }
+                            });
+
+                            let detail_generation_value = detail_generation.with_mut(|value| {
+                                *value = value.wrapping_add(1);
+                                *value
+                            });
+
+                            if let Some(detail) = detail {
+                                spawn(async move {
+                                    tokio::time::sleep(DETAIL_REQUEST_DELAY).await;
+
+                                    if detail_generation() != detail_generation_value {
+                                        return;
+                                    }
+
+                                    let start = detail.get("start").and_then(|value| value.as_f64());
+                                    let end = detail.get("end").and_then(|value| value.as_f64());
+                                    let points = detail
+                                        .get("points")
+                                        .and_then(|value| value.as_u64())
+                                        .unwrap_or(1024) as usize;
+
+                                    let (Some(start), Some(end)) = (start, end) else {
+                                        return;
+                                    };
+
+                                    let request_id = next_detail_request.with_mut(|value| {
+                                        *value = value.wrapping_add(1);
+                                        *value
+                                    });
+
+                                    let _ = ctx.command_tx.read().send(
+                                        PlayerCommand::RequestWaveformDetail {
+                                            request_id,
+                                            start: Duration::from_secs_f64(start),
+                                            end: Duration::from_secs_f64(end),
+                                            points,
+                                        },
+                                    );
+                                });
+                            }
                     }
                 });
             },

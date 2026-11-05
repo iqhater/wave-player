@@ -11,7 +11,7 @@ use rodio::Source;
 use super::playback;
 use crate::backend::analysis::service::ANALYSIS_DIR;
 use crate::backend::cover_cache;
-use crate::backend::decoder::{build_audio_pipeline, open_file_with_decoder};
+use crate::backend::decoder::{SeekAccuracy, build_audio_pipeline, open_file_with_decoder};
 use crate::backend::metadata::parse_track_metadata_with_cover;
 use crate::backend::waveform_cache;
 
@@ -42,7 +42,7 @@ pub(crate) fn load_file(state: &mut AudioState, path: PathBuf) -> Result<(), Aud
 
     let path_ref = Path::new(&path);
 
-    let decoder = open_file_with_decoder(path_ref)?;
+    let decoder = open_file_with_decoder(path_ref, SeekAccuracy::Coarse)?;
 
     let duration = decoder.total_duration().unwrap_or(Duration::ZERO);
     // println!("Duration {:?}", duration);

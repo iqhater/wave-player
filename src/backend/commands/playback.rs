@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::backend::decoder::{build_audio_pipeline, open_file_with_decoder};
+use crate::backend::decoder::{SeekAccuracy, build_audio_pipeline, open_file_with_decoder};
 use crate::backend::state::{AudioState, LoopState};
 use crate::shared::event_types::{AudioError, PlayerEvent};
 use std::sync::atomic::Ordering;
@@ -346,7 +346,7 @@ fn reload_track_with_effects_at(
     let position = position.min(state.track.duration);
     let was_playing = state.track.is_playing && !state.player.is_paused();
 
-    let decoder = open_file_with_decoder(&path)?;
+    let decoder = open_file_with_decoder(&path, SeekAccuracy::Coarse)?;
 
     state.player.stop();
     state.player.clear();
@@ -388,7 +388,7 @@ fn seek_with_wsola(state: &mut AudioState, position: Duration) -> Result<(), Aud
 
     let was_playing = state.track.is_playing && !state.player.is_paused();
 
-    let decoder = open_file_with_decoder(&path)?;
+    let decoder = open_file_with_decoder(&path, SeekAccuracy::Coarse)?;
 
     state.player.stop();
     state.player.clear();

@@ -11,5 +11,7 @@
 /webview_cache
 /wave_player_data
 /dist
+# cargo-mutants output
+/mutants.out*
 bug_report.txt
 /db

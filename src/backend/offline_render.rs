@@ -6,7 +6,7 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use rodio::Source;
 use timestretch::engine::{Engine, EngineConfig, EngineProfile};
 
-use crate::backend::decoder::open_file_with_decoder;
+use crate::backend::decoder::{SeekAccuracy, open_file_with_decoder};
 use crate::shared::event_types::AudioError;
 
 const NORMALIZATION_DB: f32 = 3.5;
@@ -112,7 +112,7 @@ fn validate_settings(settings: &RenderSettings) -> Result<(), AudioError> {
 }
 
 fn decode_loop(settings: &RenderSettings) -> Result<(Vec<StereoFrame>, u32), AudioError> {
-    let mut decoder = open_file_with_decoder(&settings.input_path)?;
+    let mut decoder = open_file_with_decoder(&settings.input_path, SeekAccuracy::Coarse)?;
 
     let source_channels = decoder.channels().get() as usize;
     let sample_rate = decoder.sample_rate().get();

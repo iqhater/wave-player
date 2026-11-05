@@ -19,8 +19,20 @@ use std::fs;
 // Decoding helpers
 // ---------------------------------------------------------------------------
 
+/// Selects the trade-off between seek speed and position accuracy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SeekAccuracy {
+    /// Fast but approximate seek used for playback.
+    Coarse,
+    /// Frame-accurate seek used for bounded waveform detail windows.
+    Accurate,
+}
+
 // V2
-pub(crate) fn open_file_with_decoder(path: &Path) -> Result<Decoder<BufReader<File>>, AudioError> {
+pub(crate) fn open_file_with_decoder(
+    path: &Path,
+    seek: SeekAccuracy,
+) -> Result<Decoder<BufReader<File>>, AudioError> {
     let file = File::open(path)
         .map_err(|_| AudioError::FileNotFound(path.to_string_lossy().into_owned()))?;
 
@@ -32,7 +44,7 @@ pub(crate) fn open_file_with_decoder(path: &Path) -> Result<Decoder<BufReader<Fi
         .with_data(BufReader::new(file))
         .with_byte_len(len)
         .with_seekable(true)
-        .with_coarse_seek(true)
+        .with_coarse_seek(matches!(seek, SeekAccuracy::Coarse))
         // .with_hint("mp3")
         .build()
         .map_err(|_| AudioError::FileCorrupted)?;
@@ -92,7 +104,7 @@ pub(crate) fn build_audio_pipeline(
 
 #[cfg(test)]
 mod tests {
-    use super::open_file_with_decoder;
+    use super::{SeekAccuracy, open_file_with_decoder};
     use crate::backend::timestretch::TimeStretchSource;
     use hound::{SampleFormat, WavSpec, WavWriter};
     use rodio::Source;
@@ -126,7 +138,7 @@ mod tests {
     #[test]
     fn decoder_should_read_24_bit_48k_to_eof_and_seek_back() {
         let path = write_24_bit_wav();
-        let mut decoder = open_file_with_decoder(&path).unwrap();
+        let mut decoder = open_file_with_decoder(&path, SeekAccuracy::Coarse).unwrap();
 
         assert_eq!(decoder.total_duration(), Some(Duration::from_secs(3)));
         assert_eq!(decoder.by_ref().count(), 144_000 * 2);
@@ -136,7 +148,7 @@ mod tests {
 
         let speed = Arc::new(AtomicU32::new(1.0_f32.to_bits()));
         let preserve_pitch = Arc::new(AtomicBool::new(false));
-        let decoder = open_file_with_decoder(&path).unwrap();
+        let decoder = open_file_with_decoder(&path, SeekAccuracy::Coarse).unwrap();
         let mut stretched = TimeStretchSource::new(decoder, speed, preserve_pitch).unwrap();
         let mut finished = false;
 

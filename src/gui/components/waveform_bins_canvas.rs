@@ -1,31 +1,18 @@
 use crate::PlayerContext;
 use crate::gui::layout::LoopDragging;
 use crate::shared::command_types::PlayerCommand;
-use crate::shared::event_types::{PlayerEvent, WaveformEnvelope};
+use crate::shared::event_types::PlayerEvent;
 use dioxus::core::use_drop;
 use dioxus::prelude::*;
 use futures_util::StreamExt;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const WAVEFORM_JS: &str = r#"
     let data = await dioxus.recv();
 
-    let targetPeaks = data.peaks || [];
-    //let progress = data.progress || 0;
-    let duration = data.duration || 0;
-    let reset = data.reset || false;
-    const detail = data.detail || null;
-
     let canvas = document.getElementById("waveform-canvas");
-
-    if (typeof data.progress === "number") {
-        window.waveProgress = data.progress;
-    }
-
-    if (typeof window.waveProgress !== "number") {
-        window.waveProgress = 0;
-    }
 
     if (!canvas) {
         return;
@@ -44,39 +31,143 @@ const WAVEFORM_JS: &str = r#"
         canvas.width = width * dpr;
         canvas.height = height * dpr;
 
-        // Установка transform вместо повторного ctx.scale().
-        // Это предотвращает накопление масштабирования при resize.
+        // Use transform instead of calling ctx.scale() again to avoid
+        // accumulating scaling on every resize.
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    window.waveDuration = duration;
+    if (typeof data.duration === "number") {
+        window.waveDuration = data.duration;
+    }
 
-    // Zoom и scroll являются общим состоянием для waveform,
-    // beat grid, seek и loop-маркеров.
-    if (reset || window.waveZoom === undefined) {
+    if (typeof data.progress === "number") {
+        window.waveProgress = data.progress;
+    }
+
+    if (typeof window.waveProgress !== "number") {
+        window.waveProgress = 0;
+    }
+
+    // Zoom and scroll are shared by the waveform, beat grid, seek,
+    // and loop markers.
+    if (data.reset || window.waveZoom === undefined) {
         window.waveZoom = 1.0;
         window.waveScroll = 0.0;
     }
 
-    if (window.waveformAnimId) {
-        cancelAnimationFrame(window.waveformAnimId);
-        window.waveformAnimId = null;
+    if (data.reset || !window.waveformState) {
+        window.waveformState = {
+            overview: null,
+            levels: [],
+            binFrames: [],
+            totalFrames: 0,
+            sampleRate: 0,
+            windows: [],
+            windowCounter: 0,
+            appearStarted: 0,
+        };
     }
 
-    if (
-        !window.animatedPeaks ||
-        window.animatedPeaks.length !== targetPeaks.length
-    ) {
-        window.animatedPeaks = new Array(targetPeaks.length).fill(0);
+    const state = window.waveformState;
+
+    if (data.reset) {
+        state.overview = null;
+        state.levels = [];
+        state.binFrames = [];
+        state.totalFrames = 0;
+        state.sampleRate = 0;
+        state.windows = [];
+        state.appearStarted = 0;
+        window.waveformLastWheelAt = 0;
     }
 
-    const LERP_FACTOR = 0.18;
+    if (Array.isArray(data.overview) && data.overview.length > 0) {
+        const overview = new Float32Array(data.overview.length);
+
+        for (let i = 0; i < data.overview.length; i++) {
+            overview[i] = Number(data.overview[i]) || 0;
+        }
+
+        state.overview = overview;
+    }
 
     /*
-     * Переводит положение внутри видимой области canvas
-     * в абсолютное время трека.
+     * Builds the mip levels of the peak pyramid in one pass.
+     * Level 0 contains packed min/max pairs.
+     */
+    function buildPeakLevels(level0, finestBinFrames) {
+        const levels = [level0];
+        const binFrames = [finestBinFrames];
+
+        let current = level0;
+        let stride = finestBinFrames;
+
+        while (current.length > 4) {
+            const next = new Int8Array(
+                Math.ceil(current.length / 4) * 2
+            );
+
+            const binCount = next.length / 2;
+
+            for (let i = 0; i < binCount; i++) {
+                const left = i * 4;
+                const right = left + 2;
+
+                const leftMin = current[left];
+                const leftMax = current[left + 1];
+
+                const rightMin =
+                    right < current.length
+                        ? current[right]
+                        : leftMin;
+
+                const rightMax =
+                    right + 1 < current.length
+                        ? current[right + 1]
+                        : leftMax;
+
+                next[i * 2] = Math.min(leftMin, rightMin);
+                next[i * 2 + 1] = Math.max(leftMax, rightMax);
+            }
+
+            stride *= 2;
+            levels.push(next);
+            binFrames.push(stride);
+            current = next;
+        }
+
+        return { levels, binFrames };
+    }
+
+    window.waveformBuildPeakLevels = buildPeakLevels;
+
+    if (data.waveformPeaks && data.waveformPeaks.encoded) {
+        const wavePeaks = data.waveformPeaks;
+        const binary = atob(wavePeaks.encoded);
+        const bytes = new Uint8Array(binary.length);
+
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+
+        const pyramid = buildPeakLevels(
+            new Int8Array(bytes.buffer),
+            Number(wavePeaks.binFrames) || 1
+        );
+
+        state.levels = pyramid.levels;
+        state.binFrames = pyramid.binFrames;
+        state.totalFrames = Number(wavePeaks.totalFrames) || 0;
+        state.sampleRate = Number(wavePeaks.sampleRate) || 0;
+        state.windows = [];
+        state.appearStarted = 0;
+    }
+
+    /*
+     * Converts a position inside the visible canvas area into an
+     * absolute track time.
      *
-     * pct находится в диапазоне 0..1.
+     * pct is in the 0..1 range.
      */
     window.waveTimeAtViewportPct = function (pct) {
         const trackDuration = window.waveDuration || 0;
@@ -103,8 +194,8 @@ const WAVEFORM_JS: &str = r#"
     };
 
     /*
-     * Переводит абсолютное время трека в процент
-     * относительно текущей видимой области canvas.
+     * Converts an absolute track time into a percentage of the
+     * current visible canvas area.
      */
     window.waveViewportPctAtTime = function (seconds) {
         const trackDuration = window.waveDuration || 0;
@@ -125,9 +216,8 @@ const WAVEFORM_JS: &str = r#"
     };
 
     /*
-     * Обновляет CSS-переменные, используемые HTML-оверлеями:
-     * - курсором;
-     * - loop-маркерами.
+     * Updates CSS variables consumed by HTML overlays:
+     * the playback cursor and loop markers.
      */
     function updateWaveViewportVariables() {
         const waveformCanvas =
@@ -159,10 +249,116 @@ const WAVEFORM_JS: &str = r#"
 
     window.updateWaveViewportVariables = updateWaveViewportVariables;
 
+    function waveformCanvasWidth() {
+        const waveformCanvas =
+            document.getElementById("waveform-canvas");
+
+        return (waveformCanvas && waveformCanvas.clientWidth) || 1;
+    }
+
     /*
-     * Изменяет zoom относительно точки под курсором.
+     * Returns the current CSS size of the canvas and recreates the
+     * backing store when the window width changes.
+     */
+    function waveformSize() {
+        const waveformCanvas =
+            document.getElementById("waveform-canvas");
+
+        const nextWidth =
+            (waveformCanvas && waveformCanvas.clientWidth) || 600;
+
+        const nextHeight =
+            (waveformCanvas && waveformCanvas.clientHeight) || 72;
+
+        const nextDpr = window.devicePixelRatio || 1;
+
+        if (
+            waveformCanvas &&
+            (waveformCanvas.width !== nextWidth * nextDpr ||
+                waveformCanvas.height !== nextHeight * nextDpr)
+        ) {
+            waveformCanvas.width = nextWidth * nextDpr;
+            waveformCanvas.height = nextHeight * nextDpr;
+
+            const nextContext =
+                waveformCanvas.getContext("2d");
+
+            nextContext.setTransform(
+                nextDpr,
+                0,
+                0,
+                nextDpr,
+                0,
+                0
+            );
+        }
+
+        return { width: nextWidth, height: nextHeight };
+    }
+
+    function waveformViewport() {
+        const trackState = window.waveformState;
+
+        const totalFrames = trackState
+            ? trackState.totalFrames || 0
+            : 0;
+
+        const zoom = Math.max(1.0, window.waveZoom || 1.0);
+        const scroll = Math.max(
+            0.0,
+            Math.min(1.0, window.waveScroll || 0.0)
+        );
+
+        const visibleFrames = totalFrames / zoom;
+        const startFrame =
+            scroll * Math.max(0, totalFrames - visibleFrames);
+
+        return {
+            totalFrames,
+            zoom,
+            scroll,
+            visibleFrames,
+            startFrame,
+            endFrame: startFrame + visibleFrames,
+        };
+    }
+
+    function choosePeakLevel(binFrames, framesPerPixel) {
+        let selected = -1;
+
+        for (let i = 0; i < binFrames.length; i++) {
+            if (binFrames[i] <= framesPerPixel) {
+                selected = i;
+            } else {
+                break;
+            }
+        }
+
+        return selected;
+    }
+
+    window.waveformChoosePeakLevel = choosePeakLevel;
+
+    function scheduleWaveformFrame() {
+        if (window.waveformAnimId) {
+            return;
+        }
+
+        window.waveformAnimId =
+            requestAnimationFrame(renderWaveformFrame);
+    }
+
+    function cancelWaveformFrame() {
+        if (window.waveformAnimId) {
+            cancelAnimationFrame(window.waveformAnimId);
+            window.waveformAnimId = null;
+        }
+    }
+
+    /*
+     * Changes zoom relative to the point under the cursor.
      *
-     * mousePct находится в диапазоне 0..1.
+     * mousePct is in the 0..1 range.
      */
     window.zoomAt = function (mousePct, factor) {
         const zoom = window.waveZoom || 1.0;
@@ -178,44 +374,31 @@ const WAVEFORM_JS: &str = r#"
 
         const newZoom = Math.max(
             1.0,
-           // Math.min(80.0, zoom * factor)
             Math.min(1_000_000.0, zoom * factor)
         );
 
         const visibleOld = 1.0 / zoom;
-
-        const startOld =
-            scroll * (1.0 - visibleOld);
+        const startOld = scroll * (1.0 - visibleOld);
 
         /*
-         * Абсолютная временная координата точки,
-         * находящейся под курсором.
+         * Absolute time coordinate of the point under the cursor.
          */
         const anchor =
             startOld + normalizedMousePct * visibleOld;
 
         const visibleNew = 1.0 / newZoom;
-
-        let startNew =
+        const startNew =
             anchor - normalizedMousePct * visibleNew;
 
-        /*
-         * Если zoom равен 1, виден весь трек,
-         * поэтому scroll должен быть равен нулю.
-         */
         let newScroll;
 
         if (visibleNew >= 1.0) {
             newScroll = 0;
         } else {
-            newScroll =
-                startNew / (1.0 - visibleNew);
+            newScroll = startNew / (1.0 - visibleNew);
         }
 
-        newScroll = Math.max(
-            0,
-            Math.min(1, newScroll)
-        );
+        newScroll = Math.max(0, Math.min(1, newScroll));
 
         window.waveZoom = newZoom;
         window.waveScroll = newScroll;
@@ -226,17 +409,26 @@ const WAVEFORM_JS: &str = r#"
             window.drawBeatGrid();
         }
 
-        if (window.waveformAnimId) {
-            cancelAnimationFrame(window.waveformAnimId);
-        }
-
-        window.waveformAnimId = requestAnimationFrame(animateFrame);
+        scheduleWaveformFrame();
     };
 
     window.setWaveViewport = function (
         nextZoom,
         centerPercent
     ) {
+        // Rust syncs the viewport with a throttle. Applying those echoes
+        // while the wheel is still moving would roll the canvas back to an
+        // older zoom value and make scrolling feel slow.
+        const now =
+            typeof performance !== "undefined" &&
+            typeof performance.now === "function"
+                ? performance.now()
+                : Date.now();
+
+        if (now - (window.waveformLastWheelAt || 0) < 250) {
+            return;
+        }
+
         const parsedZoom = Number(nextZoom);
         const parsedCenter = Number(centerPercent);
 
@@ -274,22 +466,18 @@ const WAVEFORM_JS: &str = r#"
             window.drawBeatGrid();
         }
 
-        if (window.waveformAnimId) {
-                cancelAnimationFrame(window.waveformAnimId);
-        }
-
-        window.waveformAnimId =
-                requestAnimationFrame(animateFrame);
+        scheduleWaveformFrame();
     };
 
     window.panBy = function (deltaPx) {
-        const canvas = document.getElementById("waveform-canvas");
+        const panCanvas =
+            document.getElementById("waveform-canvas");
 
-        if (!canvas) {
+        if (!panCanvas) {
             return;
         }
 
-        const width = canvas.clientWidth || 1;
+        const panWidth = panCanvas.clientWidth || 1;
         const zoom = window.waveZoom || 1.0;
         const visibleFraction = 1.0 / zoom;
         const maxStart = 1.0 - visibleFraction;
@@ -302,7 +490,7 @@ const WAVEFORM_JS: &str = r#"
             (window.waveScroll || 0.0) * maxStart;
 
         const shift =
-            (deltaPx / width) * visibleFraction;
+            (deltaPx / panWidth) * visibleFraction;
 
         const nextStart =
             Math.max(0, Math.min(maxStart, currentStart + shift));
@@ -316,13 +504,177 @@ const WAVEFORM_JS: &str = r#"
             window.drawBeatGrid();
         }
 
-        if (window.waveformAnimId) {
-            cancelAnimationFrame(window.waveformAnimId);
+        scheduleWaveformFrame();
+    };
+
+    function aggregateOverviewBetween(
+        overview,
+        startFraction,
+        endFraction
+    ) {
+        const count = overview.length;
+
+        if (count === 0) {
+            return { min: 0, max: 0, count: 0 };
         }
 
-        window.waveformAnimId =
-            requestAnimationFrame(animateFrame);
-    };
+        let first = Math.floor(startFraction * count);
+        let last = Math.ceil(endFraction * count) - 1;
+
+        first = Math.max(0, Math.min(count - 1, first));
+        last = Math.max(0, Math.min(count - 1, last));
+
+        let peak = 0;
+
+        for (let i = first; i <= last; i++) {
+            peak = Math.max(peak, Math.abs(overview[i]));
+        }
+
+        return { min: -peak, max: peak, count: last - first + 1 };
+    }
+
+    function aggregatePeakLevel(
+        level,
+        binFrames,
+        startFrame,
+        endFrame
+    ) {
+        const binCount = level.length / 2;
+
+        let first = Math.floor(startFrame / binFrames);
+        let last = Math.ceil(endFrame / binFrames) - 1;
+
+        first = Math.max(0, Math.min(binCount - 1, first));
+        last = Math.max(0, Math.min(binCount - 1, last));
+
+        let min = 127;
+        let max = -128;
+
+        for (let i = first; i <= last; i++) {
+            min = Math.min(min, level[i * 2]);
+            max = Math.max(max, level[i * 2 + 1]);
+        }
+
+        return {
+            min: min / 127,
+            max: max / 127,
+            count: last - first + 1,
+        };
+    }
+
+    window.waveformAggregatePeakLevel = aggregatePeakLevel;
+
+    function aggregateDetailWindow(
+        detailWindow,
+        startFrame,
+        endFrame
+    ) {
+        const points = detailWindow.points;
+
+        let first = Math.floor(
+            (startFrame - detailWindow.startFrame) /
+                detailWindow.framesPerPoint
+        );
+
+        let last = Math.ceil(
+            (endFrame - detailWindow.startFrame) /
+                detailWindow.framesPerPoint
+        ) - 1;
+
+        first = Math.max(0, Math.min(points.length - 1, first));
+        last = Math.max(0, Math.min(points.length - 1, last));
+
+        let min = 1;
+        let max = -1;
+
+        for (let i = first; i <= last; i++) {
+            min = Math.min(min, points[i].min);
+            max = Math.max(max, points[i].max);
+        }
+
+        return { min, max, count: last - first + 1 };
+    }
+
+    /*
+     * Plans a local window for extreme zoom. Returns null when the
+     * pyramid is not loaded yet, the resolution is sufficient, or the
+     * visible area is already covered by a window with enough detail.
+     */
+    function planLocalWindow() {
+        const trackState = window.waveformState;
+
+        if (
+            !trackState ||
+            !trackState.levels ||
+            trackState.levels.length === 0 ||
+            !trackState.binFrames ||
+            trackState.binFrames.length === 0 ||
+            !trackState.sampleRate
+        ) {
+            return null;
+        }
+
+        const viewport = waveformViewport();
+
+        if (viewport.totalFrames <= 0 || viewport.visibleFrames <= 0) {
+            return null;
+        }
+
+        const canvasWidth = waveformCanvasWidth();
+        const framesPerPixel =
+            viewport.visibleFrames / canvasWidth;
+
+        if (framesPerPixel >= trackState.binFrames[0]) {
+            return null;
+        }
+
+        // The base layer is limited by the finest peak level. A detail
+        // window is enough when it is at least as fine as the viewport
+        // (or sample-level when a pixel covers less than one frame).
+        // A small tolerance absorbs integer frame rounding in the
+        // requested window.
+        const requiredResolution =
+            Math.max(framesPerPixel, 1) * 1.05;
+
+        for (const detailWindow of trackState.windows) {
+            const coversViewport =
+                detailWindow.startFrame <= viewport.startFrame + 2 &&
+                detailWindow.endFrame >= viewport.endFrame - 2;
+
+            if (
+                coversViewport &&
+                detailWindow.framesPerPoint <= requiredResolution
+            ) {
+                return null;
+            }
+        }
+
+        const span = viewport.visibleFrames * 3;
+
+        const startFrame = Math.max(
+            0,
+            Math.floor(viewport.startFrame - span / 2)
+        );
+
+        const endFrame = Math.min(
+            viewport.totalFrames,
+            Math.ceil(viewport.endFrame + span / 2)
+        );
+
+        if (endFrame <= startFrame) {
+            return null;
+        }
+
+        return {
+            startFrame,
+            endFrame,
+            start: startFrame / trackState.sampleRate,
+            end: endFrame / trackState.sampleRate,
+            points: 4096,
+        };
+    }
+
+    window.waveformPlanLocalWindow = planLocalWindow;
 
     window.handleWaveWheel = function (
         mousePct,
@@ -330,6 +682,12 @@ const WAVEFORM_JS: &str = r#"
         deltaY,
         shiftKey
     ) {
+        window.waveformLastWheelAt =
+            typeof performance !== "undefined" &&
+            typeof performance.now === "function"
+                ? performance.now()
+                : Date.now();
+
         const hasHorizontalDelta =
             Math.abs(deltaX) > Math.abs(deltaY) &&
             Math.abs(deltaX) > 0.01;
@@ -345,262 +703,473 @@ const WAVEFORM_JS: &str = r#"
             window.panBy(panDelta);
         } else {
             const factor =
-                deltaY < 0.0 ? 1.15 : 1.0 / 1.15;
+                deltaY < 0.0 ? 1.3 : 1.0 / 1.3;
 
             window.zoomAt(mousePct, factor);
         }
 
         return {
             zoom: window.waveZoom || 1.0,
-            scroll: window.waveScroll || 0.0
+            scroll: window.waveScroll || 0.0,
+            detail: planLocalWindow(),
         };
     };
 
-    function drawDetailWaveform(detail, viewportStart, viewportSize) {
-        const points = detail.points;
-        const totalFrames = detail.totalFrames;
+    window.waveformAddDetailWindow = function (detail) {
+        const trackState = window.waveformState;
 
-        const detailStart =
-            detail.startFrame / totalFrames;
+        if (
+            !trackState ||
+            !detail ||
+            !Array.isArray(detail.points) ||
+            detail.points.length === 0
+        ) {
+            return;
+        }
 
-        const detailEnd =
-            detail.endFrame / totalFrames;
+        const startFrame = Number(detail.startFrame);
+        const endFrame = Number(detail.endFrame);
 
-        const pointSize =
-            (detailEnd - detailStart) / points.length;
+        if (
+            !Number.isFinite(startFrame) ||
+            !Number.isFinite(endFrame) ||
+            endFrame <= startFrame
+        ) {
+            return;
+        }
 
-        for (let index = 0; index < points.length; index++) {
-            const point = points[index];
+        const points = detail.points.map((point) => {
+            let min = Number(point.min);
+            let max = Number(point.max);
 
-            const pointPosition =
-                detailStart + index * pointSize;
-
-            const x =
-                ((pointPosition - viewportStart) / viewportSize) * width;
-
-            const nextX =
-                ((pointPosition + pointSize - viewportStart) / viewportSize) * width;
-
-            if (nextX < 0 || x > width) {
-                continue;
+            if (!Number.isFinite(min)) {
+                min = 0;
             }
 
-            const min = Math.max(-1, Math.min(1, point.min));
-            const max = Math.max(-1, Math.min(1, point.max));
+            if (!Number.isFinite(max)) {
+                max = 0;
+            }
+
+            return {
+                min: Math.max(-1, Math.min(1, min)),
+                max: Math.max(-1, Math.min(1, max)),
+            };
+        });
+
+        trackState.windowCounter += 1;
+
+        const entry = {
+            requestId: Number(detail.requestId) || 0,
+            startFrame,
+            endFrame,
+            points,
+            framesPerPoint:
+                (endFrame - startFrame) / points.length,
+            lastUsed: trackState.windowCounter,
+        };
+
+        const duplicate = trackState.windows.findIndex(
+            (windowEntry) =>
+                windowEntry.startFrame === startFrame &&
+                windowEntry.endFrame === endFrame
+        );
+
+        if (duplicate >= 0) {
+            trackState.windows.splice(duplicate, 1);
+        }
+
+        trackState.windows.push(entry);
+        trackState.windows.sort(
+            (left, right) => left.lastUsed - right.lastUsed
+        );
+
+        while (trackState.windows.length > 4) {
+            trackState.windows.shift();
+        }
+
+        scheduleWaveformFrame();
+    };
+
+    function drawPlaceholder(width, height) {
+        ctx.fillStyle = "rgba(196, 200, 192, 0.22)";
+        ctx.fillRect(0, Math.max(0, height / 2 - 1), width, 2);
+    }
+
+    function drawBarSet(bars, color, appear, height) {
+        ctx.fillStyle = color;
+
+        for (const bar of bars) {
+            let min = bar.min;
+            let max = bar.max;
+
+            if (min > max) {
+                const swap = min;
+                min = max;
+                max = swap;
+            }
 
             const yTop =
-                height / 2 - max * height / 2;
+                height / 2 - max * appear * height / 2;
 
             const yBottom =
-                height / 2 - min * height / 2;
+                height / 2 - min * appear * height / 2;
 
-            const barWidth =
-                Math.max(1, nextX - x);
+            const top = Math.min(yTop, yBottom);
+            const barHeight = Math.max(1, Math.abs(yBottom - yTop));
 
-            const played =
-                pointPosition <= (window.waveProgress || 0);
-
-            ctx.fillStyle = played
-                ? "rgba(90, 122, 122, 1)"
-                : "rgba(196, 200, 192, 1)";
-
-            ctx.fillRect(
-                x,
-                yTop,
-                barWidth,
-                Math.max(1, yBottom - yTop),
-            );
+            if (bar.width > 3 && ctx.roundRect) {
+                ctx.beginPath();
+                ctx.roundRect(bar.x, top, bar.width, barHeight, 4);
+                ctx.fill();
+            } else {
+                ctx.fillRect(bar.x, top, bar.width, barHeight);
+            }
         }
     }
 
-    function animateFrame() {
-        ctx.clearRect(0, 0, width, height);
+    function drawOverviewBarSet(bars, color) {
+        ctx.fillStyle = color;
 
-        const totalBins = targetPeaks.length;
-
-        if (totalBins === 0) {
-            updateWaveViewportVariables();
-            return;
-        }
-
-        const zoom = window.waveZoom || 1.0;
-        const scroll = window.waveScroll || 0.0;
-
-        /*
-         * Viewport задаётся в нормализованных координатах
-         * относительно полного waveform.
-         */
-        const visibleFraction = 1.0 / zoom;
-
-        const startFraction =
-            scroll * (1.0 - visibleFraction);
-
-        const endFraction =
-            startFraction + visibleFraction;
-
-        if (detail && detail.points && detail.points.length > 0) {
-            drawDetailWaveform(detail, startFraction, visibleFraction);
-            updateWaveViewportVariables();
-            return;
-        }
-
-        /*
-         * Дробные индексы важны: grid и waveform должны
-         * использовать одну и ту же систему координат.
-         */
-        const startPosition =
-            startFraction * totalBins;
-
-        const endPosition =
-            endFraction * totalBins;
-
-        const visibleBins =
-            Math.max(1, endPosition - startPosition);
-
-        const step =
-            width / visibleBins;
-
-        let gap;
-
-        if (step >= 4.0) {
-            gap = 1.5;
-        } else if (step >= 2.0) {
-            gap = 1.0;
-        } else {
-            gap = 0.65;
-        }
-
-        const barWidth =
-            Math.max(0.8, step - gap);
-
-        const firstBin =
-            Math.max(0, Math.floor(startPosition));
-
-        const lastBin =
-            Math.min(totalBins, Math.ceil(endPosition));
-
-        let isAnimationDone = true;
-
-        // Central horizontal line
-        /* ctx.save();
-        ctx.strokeStyle = "rgba(165, 196, 196, 0.18)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, height / 2);
-        ctx.lineTo(width, height / 2);
-        ctx.stroke();
-        ctx.restore(); */
-
-        for (let i = 0; i < totalBins; i++) {
-            const target =
-                Number(targetPeaks[i] || 0);
-
-            const current =
-                Number(window.animatedPeaks[i] || 0);
-
-            const diff = target - current;
-
-            if (Math.abs(diff) > 0.001) {
-                window.animatedPeaks[i] =
-                    current + diff * LERP_FACTOR;
-
-                isAnimationDone = false;
-            } else {
-                window.animatedPeaks[i] = target;
-            }
-        }
-
-        for (let i = firstBin; i < lastBin; i++) {
-            const current =
-                window.animatedPeaks[i] || 0;
-
-            const normalizedPeak =
-                Math.pow(Math.max(0.02, current), 0.85);
-
-            const barHeight =
-                Math.max(2.0, normalizedPeak * height);
-
-            /*
-             * Позиция учитывает дробный startPosition.
-             * Поэтому waveform не скачет относительно сетки
-             * при zoom и scroll.
-             */
-            const x =
-                (i - startPosition) * step;
-
-            const y =
-                (height - barHeight) / 2;
-
-            if ((i / totalBins) <= (window.waveProgress || 0)) {
-                ctx.fillStyle =
-                    "rgba(90, 122, 122, 1)";
-            } else {
-                ctx.fillStyle =
-                    "rgba(196, 200, 192, 1)";
-            }
-
-            /* More contrast bars color
-                if ((i / totalBins) <= (window.waveProgress || 0)) {
-                    ctx.fillStyle = "rgba(110, 165, 165, 0.95)";
-                } else {
-                    ctx.fillStyle = "rgba(205, 210, 204, 0.78)";
-                }
-            */
-
-            ctx.beginPath();
-
-            if (ctx.roundRect && barWidth >= 3.0) {
+        for (const bar of bars) {
+            if (bar.width >= 3 && ctx.roundRect) {
+                ctx.beginPath();
                 ctx.roundRect(
-                    x,
-                    y,
-                    barWidth,
-                    barHeight,
+                    bar.x,
+                    bar.y,
+                    bar.width,
+                    bar.height,
                     4
                 );
+                ctx.fill();
             } else {
-                ctx.rect(
-                    x,
-                    y,
-                    barWidth,
-                    barHeight
-                );
+                ctx.fillRect(bar.x, bar.y, bar.width, bar.height);
+            }
+        }
+    }
+
+    function renderWaveformFrame() {
+        window.waveformAnimId = null;
+
+        const size = waveformSize();
+        const width = size.width;
+        const height = size.height;
+
+        const now =
+            typeof performance !== "undefined" &&
+            typeof performance.now === "function"
+                ? performance.now()
+                : Date.now();
+
+        ctx.clearRect(0, 0, width, height);
+
+        const trackState = window.waveformState;
+
+        if (trackState && trackState.appearStarted === 0) {
+            trackState.appearStarted = now;
+        }
+
+        const appearDuration = 220;
+
+        const appear = trackState
+            ? Math.max(
+                  0,
+                  Math.min(
+                      1,
+                      (now - trackState.appearStarted) / appearDuration
+                  )
+              )
+            : 1;
+
+        const overview = trackState ? trackState.overview : null;
+        const hasPeaks =
+            trackState &&
+            trackState.levels.length > 0 &&
+            trackState.totalFrames > 0;
+
+        const viewport = waveformViewport();
+        const columns = Math.max(1, Math.floor(width));
+
+        if (
+            !hasPeaks &&
+            (!overview || overview.length === 0)
+        ) {
+            drawPlaceholder(width, height);
+            updateWaveViewportVariables();
+
+            window.waveformStats = {
+                lod: -1,
+                framesPerPixel: 0,
+                fallbackColumns: columns,
+                detailColumns: 0,
+                frameTime: 0,
+            };
+
+            return;
+        }
+
+        const framesPerPixel = hasPeaks
+            ? viewport.visibleFrames / columns
+            : 0;
+
+        // Keep the familiar coarse overview at far zoom. The peak pyramid
+        // takes over after the user zooms past the old detail threshold.
+        const useOverview =
+            (!hasPeaks || viewport.zoom < 8.0) &&
+            overview &&
+            overview.length > 0;
+
+        const overviewStartFraction =
+            viewport.scroll *
+            (1 - 1 / Math.max(1, viewport.zoom));
+
+        const overviewVisibleFraction =
+            1 / Math.max(1, viewport.zoom);
+
+        const progress = Number(window.waveProgress) || 0;
+
+        if (useOverview) {
+            const totalBins = overview.length;
+
+            const startPosition =
+                overviewStartFraction * totalBins;
+
+            const endPosition =
+                (overviewStartFraction + overviewVisibleFraction) *
+                totalBins;
+
+            const visibleBins = Math.max(
+                1,
+                endPosition - startPosition
+            );
+
+            const step = width / visibleBins;
+
+            let gap;
+
+            if (step >= 4.0) {
+                gap = 1.5;
+            } else if (step >= 2.0) {
+                gap = 1.0;
+            } else {
+                gap = 0.65;
             }
 
-            ctx.fill();
+            const barWidth = Math.max(0.8, step - gap);
+
+            const firstBin = Math.max(
+                0,
+                Math.floor(startPosition)
+            );
+
+            const lastBin = Math.min(
+                totalBins,
+                Math.ceil(endPosition)
+            );
+
+            const playedBars = [];
+            const unplayedBars = [];
+
+            for (let i = firstBin; i < lastBin; i++) {
+                const peak = Number(overview[i]) || 0;
+
+                const normalized = Math.pow(
+                    Math.max(0.02, peak),
+                    0.85
+                );
+
+                const barHeight = Math.max(
+                    2.0,
+                    normalized * height * appear
+                );
+
+                const x = (i - startPosition) * step;
+                const y = (height - barHeight) / 2;
+
+                const bar = {
+                    x,
+                    y,
+                    width: barWidth,
+                    height: barHeight,
+                };
+
+                if (i / totalBins <= progress) {
+                    playedBars.push(bar);
+                } else {
+                    unplayedBars.push(bar);
+                }
+            }
+
+            drawOverviewBarSet(
+                playedBars,
+                "rgba(90, 122, 122, 1)"
+            );
+
+            drawOverviewBarSet(
+                unplayedBars,
+                "rgba(196, 200, 192, 1)"
+            );
+
+            updateWaveViewportVariables();
+
+            window.waveformStats = {
+                lod: -1,
+                framesPerPixel,
+                fallbackColumns: columns,
+                detailColumns: 0,
+                frameTime:
+                    (typeof performance !== "undefined" &&
+                    typeof performance.now === "function"
+                        ? performance.now()
+                        : Date.now()) - now,
+            };
+
+            if (appear < 1) {
+                window.waveformAnimId =
+                    requestAnimationFrame(renderWaveformFrame);
+            }
+
+            return;
         }
+
+        const lod = choosePeakLevel(
+            trackState.binFrames,
+            framesPerPixel
+        );
+
+        // In local-window mode a coarser mip level replaces the missing
+        // detail until the precise window arrives.
+        const baseLevel = lod >= 0 ? lod : 0;
+
+        const bars = [];
+        let detailColumns = 0;
+
+        for (let x = 0; x < columns; x++) {
+            const frameStart =
+                viewport.startFrame + x * framesPerPixel;
+
+            const frameEnd = frameStart + framesPerPixel;
+
+            const played =
+                frameStart / viewport.totalFrames <= progress;
+
+            let min = 0;
+            let max = 0;
+            let resolution = trackState.binFrames[baseLevel];
+
+            const aggregate = aggregatePeakLevel(
+                trackState.levels[baseLevel],
+                trackState.binFrames[baseLevel],
+                frameStart,
+                frameEnd
+            );
+
+            min = aggregate.min;
+            max = aggregate.max;
+
+            for (const detailWindow of trackState.windows) {
+                if (
+                    frameEnd <= detailWindow.startFrame ||
+                    frameStart >= detailWindow.endFrame
+                ) {
+                    continue;
+                }
+
+                // Use the finest available window. Even when a pixel
+                // covers less than one frame, sample-level detail is
+                // the best data we can get.
+                if (
+                    detailWindow.framesPerPoint >= resolution
+                ) {
+                    continue;
+                }
+
+                const detail = aggregateDetailWindow(
+                    detailWindow,
+                    frameStart,
+                    frameEnd
+                );
+
+                min = detail.min;
+                max = detail.max;
+                resolution = detailWindow.framesPerPoint;
+                detailColumns += 1;
+            }
+
+            bars.push({
+                x,
+                width: 1,
+                min,
+                max,
+                played,
+            });
+        }
+
+        const playedBars = bars.filter((bar) => bar.played);
+        const unplayedBars = bars.filter((bar) => !bar.played);
+
+        drawBarSet(
+            playedBars,
+            "rgba(90, 122, 122, 1)",
+            appear,
+            height
+        );
+
+        drawBarSet(
+            unplayedBars,
+            "rgba(196, 200, 192, 1)",
+            appear,
+            height
+        );
 
         updateWaveViewportVariables();
 
-        if (!isAnimationDone) {
+        window.waveformStats = {
+            lod,
+            framesPerPixel,
+            fallbackColumns: 0,
+            detailColumns,
+            frameTime:
+                (typeof performance !== "undefined" &&
+                typeof performance.now === "function"
+                    ? performance.now()
+                    : Date.now()) - now,
+        };
+
+        if (appear < 1) {
             window.waveformAnimId =
-                requestAnimationFrame(animateFrame);
-        } else {
-            window.waveformAnimId = null;
+                requestAnimationFrame(renderWaveformFrame);
         }
     }
 
-    window.renderWaveform = function () {
-        if (window.waveformAnimId) {
-            return;
-        }
+    window.waveformRenderFrame = renderWaveformFrame;
 
-        window.waveformAnimId =
-            requestAnimationFrame(animateFrame);
+    window.renderWaveform = function () {
+        scheduleWaveformFrame();
     };
 
-    if (
-        typeof data.zoom === "number" &&
-        typeof data.viewCenter === "number" &&
-        window.setWaveViewport
-    ) {
-        window.setWaveViewport(
-            data.zoom,
-            data.viewCenter
+    if (window.waveformResizeObserver) {
+        window.waveformResizeObserver.disconnect();
+        window.waveformResizeObserver = undefined;
+    }
+
+    if (typeof ResizeObserver !== "undefined") {
+        window.waveformResizeObserver = new ResizeObserver(
+            () => scheduleWaveformFrame()
         );
+
+        window.waveformResizeObserver.observe(canvas);
     }
 
     updateWaveViewportVariables();
-    animateFrame();
+    scheduleWaveformFrame();
+"#;
+
+const WAVEFORM_DETAIL_JS: &str = r#"
+let data = await dioxus.recv();
+
+if (window.waveformAddDetailWindow) {
+    window.waveformAddDetailWindow(data);
+}
 "#;
 
 const WAVEFORM_VIEWPORT_JS: &str = r#"
@@ -645,14 +1214,17 @@ if (typeof data.progress === "number") {
 }
 "#;
 
-#[derive(Clone, Debug)]
-struct DetailWaveform {
-    start_frame: usize,
-    end_frame: usize,
-    total_frames: usize,
+#[derive(Clone, PartialEq)]
+struct WaveformPeaksData {
     sample_rate: u32,
-    points: Vec<WaveformEnvelope>,
+    total_frames: usize,
+    bin_frames: usize,
+    encoded: Arc<str>,
 }
+
+const VIEWPORT_SYNC_INTERVAL: Duration = Duration::from_millis(50);
+const VIEWPORT_SYNC_DELAY: Duration = Duration::from_millis(60);
+const DETAIL_REQUEST_DELAY: Duration = Duration::from_millis(50);
 
 #[component]
 pub fn WaveformBinsCanvas(
@@ -664,17 +1236,20 @@ pub fn WaveformBinsCanvas(
     let ctx = use_context::<PlayerContext>();
     let loop_dragging = use_context::<LoopDragging>().0;
     let mut position_secs = use_signal(|| 0.0);
-    let num_bins = 500;
-    let mut waveform_peaks = use_signal(|| vec![0.0_f32; num_bins]);
+    let mut waveform_peaks = use_signal(Vec::<f32>::new);
+    let mut peak_pyramid = use_signal(|| None::<WaveformPeaksData>);
 
-    let mut detail_waveform = use_signal(|| None::<DetailWaveform>);
-    let mut active_detail_request = use_signal(|| None::<u64>);
-    let mut next_detail_request = use_signal(|| 0_u64);
-
-    // Сигнал сброса зума при загрузке нового трека
+    // Zoom reset signal for a newly loaded track.
     let mut reset_zoom = use_signal(|| false);
 
-    let mut detail_request_pending = use_signal(|| false);
+    // Viewport signals are synchronized at most once per 50 ms; the
+    // final value is applied after the gesture stops.
+    let mut viewport_synced_at = use_signal(|| None::<Instant>);
+    let mut viewport_pending = use_signal(|| None::<(f32, f32)>);
+    let mut viewport_generation = use_signal(|| 0_u64);
+
+    let mut detail_generation = use_signal(|| 0_u64);
+    let mut next_detail_request = use_signal(|| 0_u64);
 
     use_effect(move || {
         let _ = ctx
@@ -683,23 +1258,30 @@ pub fn WaveformBinsCanvas(
             .send(PlayerCommand::RequestWaveformOverview);
     });
 
-    // Фоновый слушатель событий от аудио-ядра
+    // Background event listener for audio-core events.
     use_future(move || {
         let mut status_rx = ctx.status_rx.read().clone();
         async move {
             while let Some(status) = status_rx.next().await {
                 match status {
                     PlayerEvent::Started { .. } => {
-                        waveform_peaks.set(vec![0.0f32; num_bins]);
-                        detail_waveform.set(None);
-                        active_detail_request.set(None);
+                        waveform_peaks.set(Vec::new());
+                        peak_pyramid.set(None);
 
-                        // Сбрасываем зум в исходное состояние при запуске нового трека
+                        // Reset zoom when a new track starts.
                         reset_zoom.set(true);
                         zoom.set(1.0);
                         view_center.set(50.0);
 
-                        detail_request_pending.set(false);
+                        viewport_synced_at.set(None);
+                        viewport_pending.set(None);
+
+                        // Replay cached overview and peaks if analysis for the
+                        // new track has already completed.
+                        let _ = ctx
+                            .command_tx
+                            .read()
+                            .send(PlayerCommand::RequestWaveformOverview);
                     }
                     PlayerEvent::WaveformChunkReady {
                         chunk,
@@ -718,6 +1300,19 @@ pub fn WaveformBinsCanvas(
                             }
                         });
                     }
+                    PlayerEvent::WaveformPeaksReady {
+                        sample_rate,
+                        total_frames,
+                        bin_frames,
+                        encoded,
+                    } => {
+                        peak_pyramid.set(Some(WaveformPeaksData {
+                            sample_rate,
+                            total_frames,
+                            bin_frames,
+                            encoded,
+                        }));
+                    }
                     PlayerEvent::WaveformDetailReady {
                         request_id,
                         start_frame,
@@ -726,17 +1321,21 @@ pub fn WaveformBinsCanvas(
                         sample_rate,
                         points,
                     } => {
-                        if active_detail_request() == Some(request_id) {
-                            detail_waveform.set(Some(DetailWaveform {
-                                start_frame,
-                                end_frame,
-                                total_frames,
-                                sample_rate,
-                                points,
-                            }));
+                        // A stale window is not applied to the current
+                        // viewport directly but stays in the JS LRU cache.
+                        let detail = serde_json::json!({
+                            "requestId": request_id,
+                            "startFrame": start_frame,
+                            "endFrame": end_frame,
+                            "totalFrames": total_frames,
+                            "sampleRate": sample_rate,
+                            "points": points,
+                        });
 
-                            detail_request_pending.set(false);
-                        }
+                        spawn(async move {
+                            let eval = dioxus::document::eval(WAVEFORM_DETAIL_JS);
+                            let _ = eval.send(detail);
+                        });
                     }
 
                     _ => {}
@@ -745,8 +1344,8 @@ pub fn WaveformBinsCanvas(
         }
     });
 
-    // Периодически опрашиваем реальную позицию воспроизведения из атомика,
-    // чтобы закрашивание волны обновлялось синхронно с курсором
+    // Poll the real playback position from the atomic so the waveform
+    // fill updates in sync with the cursor.
     use_future(move || {
         let pos = ctx.playback_progress.read().clone();
 
@@ -807,13 +1406,10 @@ pub fn WaveformBinsCanvas(
         });
     });
 
-    // Перерисовка canvas при изменении пиков, позиции или зума
+    // Redraw the canvas when the overview, peaks, or track length changes.
     use_effect(move || {
-        if loop_dragging() {
-            return;
-        }
-
         let peaks = waveform_peaks.read().clone();
+        let pyramid = peak_pyramid.read().clone();
         let total_dur = total_duration();
         let do_reset = reset_zoom();
 
@@ -821,29 +1417,22 @@ pub fn WaveformBinsCanvas(
             reset_zoom.set(false);
         }
 
-        let detail = detail_waveform().map(|data| {
-            serde_json::json!({
-                "startFrame": data.start_frame,
-                "endFrame": data.end_frame,
-                "totalFrames": data.total_frames,
-                "sampleRate": data.sample_rate,
-                "points": data.points,
-            })
-        });
-
         spawn(async move {
             let eval = dioxus::document::eval(WAVEFORM_JS);
 
             let _ = eval.send(serde_json::json!({
-                "peaks": peaks,
+                "overview": peaks,
+                "waveformPeaks": pyramid.map(|data| serde_json::json!({
+                    "sampleRate": data.sample_rate,
+                    "totalFrames": data.total_frames,
+                    "binFrames": data.bin_frames,
+                    "encoded": data.encoded.to_string(),
+                })),
                 "duration": total_dur,
                 "reset": do_reset,
-                "detail": detail,
             }));
         });
     });
-
-    const DETAIL_ZOOM_THRESHOLD: f32 = 8.0;
 
     use_effect(move || {
         let current_zoom = zoom();
@@ -859,61 +1448,6 @@ pub fn WaveformBinsCanvas(
         });
     });
 
-    use_effect(move || {
-        let duration = total_duration();
-        let current_zoom = zoom();
-        let center_percent = view_center();
-
-        if duration <= 0.0 {
-            return;
-        }
-
-        if current_zoom < DETAIL_ZOOM_THRESHOLD {
-            detail_waveform.set(None);
-            active_detail_request.set(None);
-            detail_request_pending.set(false);
-            return;
-        }
-
-        let visible_fraction = 1.0 / current_zoom;
-
-        let center_fraction = (center_percent / 100.0).clamp(0.0, 1.0);
-
-        // Load a wider range to avoid decoding on every follow movement.
-        let request_fraction = (visible_fraction * 3.0).min(1.0);
-
-        let start_fraction =
-            (center_fraction - request_fraction / 2.0).clamp(0.0, 1.0 - request_fraction);
-
-        let end_fraction = (start_fraction + request_fraction).min(1.0);
-
-        if detail_request_pending() {
-            return;
-        }
-
-        let request_id = next_detail_request.with_mut(|id| {
-            *id = id.wrapping_add(1);
-            *id
-        });
-
-        active_detail_request.set(Some(request_id));
-        detail_request_pending.set(true);
-
-        let start = Duration::from_secs_f32(duration * start_fraction);
-
-        let end = Duration::from_secs_f32(duration * end_fraction);
-
-        let _ = ctx
-            .command_tx
-            .read()
-            .send(PlayerCommand::RequestWaveformDetail {
-                request_id,
-                start,
-                end,
-                points: 4096,
-            });
-    });
-
     // Clean up waveform animation resources on drop
     use_drop(|| {
         let _ = dioxus::document::eval(
@@ -922,6 +1456,13 @@ pub fn WaveformBinsCanvas(
                 cancelAnimationFrame(window.waveformAnimId);
                 window.waveformAnimId = null;
             }
+
+            if (window.waveformResizeObserver) {
+                window.waveformResizeObserver.disconnect();
+                window.waveformResizeObserver = undefined;
+            }
+
+            window.waveformLastWheelAt = 0;
 
             window.waveViewportPctAtTime = undefined;
             window.waveTimeAtViewportPct = undefined;
@@ -937,7 +1478,7 @@ pub fn WaveformBinsCanvas(
             class: "w-full h-18 flex-shrink-0 pointer-events-auto",
             style: "display: block; width: 100%; height: 72px; background: transparent;",
 
-            // Обработка вертикального колесика мыши (зум)
+            // Mouse wheel handling (zoom/pan).
             onwheel: move |e| {
                 let delta = e.delta().strip_units();
                 let delta_x = delta.x;
@@ -945,7 +1486,8 @@ pub fn WaveformBinsCanvas(
                 let shift_key = e.modifiers().shift();
                 let click_x = e.element_coordinates().x as f32;
 
-                // Вся логика зума — в JS (синхронно, без гонок и без запроса ширины)
+                // All zoom logic lives in JS (synchronously, without races and
+                // without querying the width from Rust).
                 let mut eval = dioxus::document::eval(
                     r#"
                     let data = await dioxus.recv();
@@ -1001,8 +1543,87 @@ pub fn WaveformBinsCanvas(
                         let center_percent =
                             (start_fraction + visible_fraction / 2.0) * 100.0;
 
-                        zoom.set(new_zoom);
-                        view_center.set(center_percent.clamp(0.0, 100.0));
+                        let center_percent = center_percent.clamp(0.0, 100.0);
+                        let detail = data
+                            .get("detail")
+                            .filter(|value| !value.is_null())
+                            .cloned();
+
+                        let now = Instant::now();
+                        let should_sync = viewport_synced_at()
+                            .is_none_or(|last| now.duration_since(last) >= VIEWPORT_SYNC_INTERVAL);
+
+                        let generation = viewport_generation.with_mut(|value| {
+                            *value = value.wrapping_add(1);
+                            *value
+                        });
+
+                        if should_sync {
+                            viewport_synced_at.set(Some(now));
+                            viewport_pending.set(None);
+                            zoom.set(new_zoom);
+                            view_center.set(center_percent);
+                        } else {
+                            viewport_pending.set(Some((new_zoom, center_percent)));
+                        }
+
+                        spawn(async move {
+                            tokio::time::sleep(VIEWPORT_SYNC_DELAY).await;
+
+                            if viewport_generation() != generation {
+                                return;
+                            }
+
+                            let pending = viewport_pending();
+
+                            viewport_pending.set(None);
+                            viewport_synced_at.set(Some(Instant::now()));
+
+                            if let Some((pending_zoom, pending_center)) = pending {
+                                zoom.set(pending_zoom);
+                                view_center.set(pending_center);
+                            }
+                        });
+
+                        let detail_generation_value = detail_generation.with_mut(|value| {
+                            *value = value.wrapping_add(1);
+                            *value
+                        });
+
+                        if let Some(detail) = detail {
+                            spawn(async move {
+                                tokio::time::sleep(DETAIL_REQUEST_DELAY).await;
+
+                                if detail_generation() != detail_generation_value {
+                                    return;
+                                }
+
+                                let start = detail.get("start").and_then(|value| value.as_f64());
+                                let end = detail.get("end").and_then(|value| value.as_f64());
+                                let points = detail
+                                    .get("points")
+                                    .and_then(|value| value.as_u64())
+                                    .unwrap_or(1024) as usize;
+
+                                let (Some(start), Some(end)) = (start, end) else {
+                                    return;
+                                };
+
+                                let request_id = next_detail_request.with_mut(|value| {
+                                    *value = value.wrapping_add(1);
+                                    *value
+                                });
+
+                                let _ = ctx.command_tx.read().send(
+                                    PlayerCommand::RequestWaveformDetail {
+                                        request_id,
+                                        start: Duration::from_secs_f64(start),
+                                        end: Duration::from_secs_f64(end),
+                                        points,
+                                    },
+                                );
+                            });
+                        }
                     }
                 });
             }
