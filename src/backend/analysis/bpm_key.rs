@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use stratum_dsp::{AnalysisConfig, analyze_audio};
 
-pub(super) const BPM_KEY_VERSION: u32 = 2;
+/// Version 3 limits BPM/key analysis to the first ten minutes of a track.
+pub(super) const BPM_KEY_VERSION: u32 = 3;
 
 /// Result of BPM and key analysis
 #[derive(Clone, Debug, Serialize, Deserialize)]

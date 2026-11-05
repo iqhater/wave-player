@@ -49,7 +49,7 @@ context: |
   - Mutation tests:
     - Do not run mutation testing by default; it is slow and must not dominate agent work.
     - Run cargo-mutants only for new features or substantially rewritten pure-logic modules, scoped to the files changed by the current change.
-    - Time-box a mutation run to 5 minutes at most, use parallelism and a per-mutant timeout; if it exceeds the budget, stop and record what was not checked.
+    - Time-box a mutation run to 10 minutes at most, use parallelism and a per-mutant timeout; if it exceeds the budget, stop and record what was not checked.
     - Never run mutation testing on the whole repository and never for a bug-fix-only change that introduces no new logic.
   - End-to-end tests:
     - Automated e2e and UI-automation tests are not used in this project. Do not add them unless a future explicit change requests a harness.
@@ -85,7 +85,7 @@ rules:
   tasks:
     - Break implementation into small, ordered, actionable tasks with clear completion criteria.
     - Include unit and integration tests as explicit tasks, including the verification command and expected result.
-    - Include mutation testing only for new features or substantially rewritten logic and mark it as optional and time-boxed with a 5-minute budget.
+    - Include mutation testing only for new features or substantially rewritten logic and mark it as optional and time-boxed with a 10-minute budget.
     - Do not add e2e tasks.
     - Include documentation, config migrations, and data migrations where needed.
     - Keep tasks traceable to the requirements and technical design.
@@ -98,7 +98,7 @@ operations:
       - Update task checkboxes as work progresses; mark a task complete only after its implementation and applicable verification are finished.
       - Run targeted tests for changed modules first, then the broader suite; inspect Taskfile.yml and CI for the actual commands instead of guessing.
       - Measure coverage for new or changed logic when tooling is available; do not block the change on a repository-wide percentage.
-      - Run mutation testing only when the change adds a new feature or substantially rewrites logic, and keep it within the 5-minute budget.
+      - Run mutation testing only when the change adds a new feature or substantially rewrites logic, and keep it within the 10-minute budget.
       - If implementation reveals a material specification conflict or a need to expand scope, reconcile the OpenSpec artifacts before proceeding.
       - Do not claim that tests or checks passed unless they were actually executed successfully.
 

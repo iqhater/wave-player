@@ -27,6 +27,12 @@ const OVERVIEW_BINS: usize = 500;
 const MAX_DETAIL_POINTS: usize = 16_384;
 const CHECK_INTERVAL: usize = 4096;
 
+/// BPM/key analysis only uses the first ten minutes of a track.
+const BPM_KEY_WINDOW: Duration = Duration::from_secs(10 * 60);
+
+/// Upper bound for high sample rates: ten minutes at 48 kHz.
+const BPM_KEY_MAX_FRAMES: u64 = 28_800_000;
+
 pub(crate) const PEAK_BIN_FRAMES: usize = 128;
 pub(crate) const MAX_PEAK_BINS: usize = 4_000_000;
 
@@ -943,6 +949,22 @@ fn quantize_peak(value: f32) -> i8 {
     (value.clamp(-1.0, 1.0) * 127.0).round() as i8
 }
 
+/// Frame budget for BPM/key analysis: the analyzed window of the track,
+/// capped by an absolute frame limit so high sample rates cannot grow the buffer.
+fn bpm_key_frame_limit(duration: Duration, sample_rate: u32) -> usize {
+    let sample_rate = u128::from(sample_rate);
+    let window_frames = sample_rate.saturating_mul(BPM_KEY_WINDOW.as_secs() as u128);
+    let duration_frames = duration
+        .as_nanos()
+        .saturating_mul(sample_rate)
+        .saturating_div(1_000_000_000);
+
+    duration_frames
+        .min(window_frames)
+        .min(u128::from(BPM_KEY_MAX_FRAMES))
+        .min(usize::MAX as u128) as usize
+}
+
 fn decode_mono(job: &TrackJob) -> AnalysisResult<(Vec<f32>, u32)> {
     job.token.check()?;
 
@@ -957,14 +979,13 @@ fn decode_mono(job: &TrackJob) -> AnalysisResult<(Vec<f32>, u32)> {
         .saturating_add(u64::from(job.duration.subsec_nanos() > 0))
         .max(1);
 
-    let max_frames =
-        (sample_rate as usize).saturating_mul(limit_secs.min(usize::MAX as u64) as usize);
+    let frame_limit = bpm_key_frame_limit(Duration::from_secs(limit_secs), sample_rate);
 
     let mut decoder = decoder.amplify_decibel(3.5);
     let mut frame = vec![0.0_f32; channels];
-    let mut samples = Vec::new();
+    let mut samples = Vec::with_capacity(frame_limit);
 
-    for frame_index in 0..max_frames {
+    for frame_index in 0..frame_limit {
         if frame_index % CHECK_INTERVAL == 0 {
             job.token.check()?;
             thread::yield_now();
@@ -1223,7 +1244,7 @@ mod tests {
     }
 
     #[test]
-    fn old_beat_grid_should_be_reanalyzed_without_discarding_loudness() {
+    fn outdated_bpm_key_should_be_reanalyzed_without_discarding_loudness() {
         let source = SourceStamp {
             version: CACHE_VERSION,
             path: PathBuf::from("track.wav"),
@@ -1232,7 +1253,7 @@ mod tests {
             modified_nanos: 0,
         };
         let mut value = serde_json::to_value(CachedAnalysis::empty(source.clone())).unwrap();
-        value.as_object_mut().unwrap().remove("bpm_key_version");
+        value["bpm_key_version"] = serde_json::json!(2);
         value["bpm_key"] = serde_json::json!({
             "bpm": 120.0,
             "beat_grid": { "offset": 0.0, "beats": [0.0], "bars": [], "downbeats": [] },
@@ -1243,7 +1264,9 @@ mod tests {
         let bytes = serde_json::to_vec(&value).unwrap();
         let cache = parse_cache(&bytes, &source).unwrap();
 
-        assert!(cache.bpm_key.is_none() && cache.loudness.is_some());
+        assert!(cache.bpm_key.is_none());
+        assert_eq!(cache.bpm_key_version, BPM_KEY_VERSION);
+        assert!(cache.loudness.is_some());
     }
 
     #[test]
@@ -1266,6 +1289,83 @@ mod tests {
         let cache = parse_cache(&bytes, &source).unwrap();
 
         assert!(cache.bpm_key.is_some());
+        assert_eq!(cache.bpm_key_version, BPM_KEY_VERSION);
+    }
+
+    #[test]
+    fn outdated_bpm_key_should_keep_cached_waveform_and_loudness() {
+        let sample_rate = 8_000;
+        let total_frames = 4_000;
+        let path = write_test_wav("outdated_cache", sample_rate, total_frames, |_| 0.25);
+        let source = SourceStamp::read(&path).unwrap();
+
+        let cache_dir = std::env::temp_dir().join(format!(
+            "wave_player_analysis_cache_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        let waveform = CachedWaveform {
+            peaks: vec![0.25; OVERVIEW_BINS],
+            waveform_peaks: Some(CachedWaveformPeaks {
+                sample_rate,
+                total_frames: total_frames as u64,
+                bin_frames: PEAK_BIN_FRAMES as u32,
+                bins: vec![32, 31, 0, 0],
+            }),
+        };
+
+        waveform_cache::save(&cache_dir, &source, &waveform).unwrap();
+
+        let mut value = serde_json::to_value(CachedAnalysis::empty(source.clone())).unwrap();
+        value["bpm_key_version"] = serde_json::json!(2);
+        value["bpm_key"] = serde_json::json!({
+            "bpm": 120.0,
+            "beat_grid": { "offset": 0.0, "beats": [0.0], "bars": [], "downbeats": [] },
+            "key_name": "C major",
+            "key_numerical": "8B",
+        });
+        value["loudness"] = serde_json::json!({ "integrated_lufs": -14.0 });
+
+        std::fs::create_dir_all(cache_dir.join(ANALYSIS_DIR)).unwrap();
+        std::fs::write(
+            cache_path(&cache_dir, &path),
+            serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+
+        let (store_tx, store_rx) = flume::unbounded();
+        let responder = std::thread::spawn(move || {
+            while let Ok(command) = store_rx.recv() {
+                if let StoreCommand::LoadCachedAnalysis { reply, .. } = command {
+                    let _ = reply.send(Ok(None));
+                }
+            }
+        });
+
+        let job = TrackJob {
+            path: path.clone(),
+            duration: Duration::from_secs_f32(total_frames as f32 / sample_rate as f32),
+            token: test_token(),
+            force: false,
+        };
+
+        let cache = load_cache(&job, &cache_dir, &store_tx).unwrap();
+
+        drop(store_tx);
+        responder.join().unwrap();
+
+        assert!(cache.bpm_key.is_none());
+        assert_eq!(cache.bpm_key_version, BPM_KEY_VERSION);
+        assert!(cache.loudness.is_some());
+        assert!(cache.waveform.is_some());
+        assert!(cache.waveform_peaks.is_some());
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(cache_dir);
     }
 
     #[test]
@@ -1350,6 +1450,93 @@ mod tests {
 
         writer.finalize().unwrap();
         path
+    }
+
+    #[test]
+    fn frame_limit_should_cover_the_first_ten_minutes() {
+        let minute = Duration::from_secs(60);
+
+        assert_eq!(
+            bpm_key_frame_limit(minute * 60, 44_100),
+            26_460_000,
+            "one hour at 44.1 kHz should be cut to ten minutes"
+        );
+        assert_eq!(
+            bpm_key_frame_limit(minute * 10, 44_100),
+            26_460_000,
+            "exactly ten minutes should not drop the last frame"
+        );
+    }
+
+    #[test]
+    fn frame_limit_should_decode_short_tracks_completely() {
+        assert_eq!(
+            bpm_key_frame_limit(Duration::from_secs(3 * 60), 44_100),
+            3 * 60 * 44_100
+        );
+        assert_eq!(
+            bpm_key_frame_limit(Duration::from_secs(10 * 60), 48_000),
+            10 * 60 * 48_000
+        );
+    }
+
+    #[test]
+    fn frame_limit_should_cap_high_sample_rates() {
+        assert_eq!(
+            bpm_key_frame_limit(Duration::from_secs(60 * 60), 192_000),
+            BPM_KEY_MAX_FRAMES as usize
+        );
+        assert_eq!(
+            bpm_key_frame_limit(Duration::from_secs(60 * 60), 96_000),
+            BPM_KEY_MAX_FRAMES as usize
+        );
+    }
+
+    #[test]
+    fn frame_limit_should_saturate_without_panicking() {
+        assert_eq!(bpm_key_frame_limit(Duration::ZERO, 44_100), 0);
+        assert_eq!(bpm_key_frame_limit(Duration::from_secs(60), 0), 0);
+        assert_eq!(
+            bpm_key_frame_limit(Duration::MAX, u32::MAX),
+            BPM_KEY_MAX_FRAMES as usize
+        );
+    }
+
+    #[test]
+    fn decode_mono_should_decode_short_track_completely() {
+        let sample_rate = 8_000;
+        let total_frames = 4_000;
+        let path = write_test_wav("decode_mono", sample_rate, total_frames, |frame| {
+            if frame % 2 == 0 { 0.5 } else { -0.5 }
+        });
+
+        let job = TrackJob {
+            path: path.clone(),
+            duration: Duration::from_secs_f32(total_frames as f32 / sample_rate as f32),
+            token: test_token(),
+            force: false,
+        };
+
+        let (samples, decoded_rate) = decode_mono(&job).unwrap();
+
+        assert_eq!(decoded_rate, sample_rate);
+        assert_eq!(samples.len(), total_frames);
+
+        // The decoder applies +3.5 dB to the mono sum.
+        let gain = 10_f32.powf(3.5 / 20.0);
+
+        for (index, sample) in samples.iter().enumerate() {
+            let source = if index % 2 == 0 { 0.5 } else { -0.5 };
+            let quantized = (source * i16::MAX as f32) as i16;
+            let expected = quantized as f32 / 32_768.0 * gain;
+
+            assert!(
+                (sample - expected).abs() < 1e-3,
+                "frame {index}: decoded {sample}, expected {expected}"
+            );
+        }
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
