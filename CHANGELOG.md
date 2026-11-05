@@ -1,3 +1,13 @@
+## [0.1.0-alpha.18] - 2026-11-05
+
+### 🐛 Bug Fixes
+
+- *(waveform)* Align time scale and density
+- *(analysis)* Limit BPM/key window to 10 minutes
+
+### ⚡ Performance
+
+- *(waveform)* Optimize zoom with peak pyramid
 ## [0.1.0-alpha.17] - 2026-10-30
 
 ### 🚀 Features
